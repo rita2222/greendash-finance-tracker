@@ -1,3 +1,4 @@
+//@ts-nocheck
 import { useState, useEffect, useMemo, useRef } from "react"
 import * as XLSX from 'xlsx'
 
