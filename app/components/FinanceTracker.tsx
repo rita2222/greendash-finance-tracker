@@ -8,16 +8,35 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', proces
 async function storageGet(key) {
   try {
     const { data, error } = await supabase.from('finance_data').select('value').eq('key', key).single()
+    if (error && error.code !== 'PGRST116') {
+      console.warn('⚠️ Supabase GET error:', error)
+      const local = localStorage.getItem(key)
+      return local ? { key, value: local } : null
+    }
     return error ? null : { key, value: data?.value }
-  } catch (e) { return null }
+  } catch (e) { 
+    console.error('❌ Supabase GET exception:', e)
+    const local = localStorage.getItem(key)
+    return local ? { key, value: local } : null
+  }
 }
 
 async function storageSet(key, value) {
   try {
     await supabase.from('finance_data').delete().eq('key', key)
     const { error } = await supabase.from('finance_data').insert([{ key, value }])
-    return !error
-  } catch (e) { return false }
+    if (error) {
+      console.warn('⚠️ Supabase SET error:', error)
+      localStorage.setItem(key, value)
+      return true
+    }
+    localStorage.setItem(key, value)
+    return true
+  } catch (e) { 
+    console.error('❌ Supabase SET exception:', e)
+    localStorage.setItem(key, value)
+    return true
+  }
 }
 
 
