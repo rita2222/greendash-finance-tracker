@@ -747,11 +747,11 @@ export default function App(){
       setLoaded(true)
     })()
   },[])
-  useEffect(()=>{if(loaded)window.storage?.set('ft_inv',JSON.stringify(invoices)).catch(()=>{})},[invoices,loaded])
-  useEffect(()=>{if(loaded)window.storage?.set('ft_exp',JSON.stringify(expenses)).catch(()=>{})},[expenses,loaded])
-  useEffect(()=>{if(loaded)window.storage?.set('ft_gexp',JSON.stringify(grantExps)).catch(()=>{})},[grantExps,loaded])
-  useEffect(()=>{if(loaded)window.storage?.set('ft_future',JSON.stringify(futureExpenses)).catch(()=>{})},[futureExpenses,loaded])
-  useEffect(()=>{if(loaded)window.storage?.set('ft_ivasub',JSON.stringify(ivaSubmitted)).catch(()=>{})},[ivaSubmitted,loaded])
+  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_inv',JSON.stringify(invoices));save()}},[invoices,loaded])
+  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_exp',JSON.stringify(expenses));save()}},[expenses,loaded])
+  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_gexp',JSON.stringify(grantExps));save()}},[grantExps,loaded])
+  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_future',JSON.stringify(futureExpenses));save()}},[futureExpenses,loaded])
+  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_ivasub',JSON.stringify(ivaSubmitted));save()}},[ivaSubmitted,loaded])
 
   const prevMo=()=>{if(mo===0){setMo(11);setYr(y=>y-1)}else setMo(m=>m-1)}
   const nextMo=()=>{if(mo===11){setMo(0);setYr(y=>y+1)}else setMo(m=>m+1)}
