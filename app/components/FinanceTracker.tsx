@@ -762,8 +762,11 @@ export default function App(){
         const g=await storageGet('ft_gexp');if(g)setGrantExps(JSON.parse(g.value))
         const fe=await storageGet('ft_future');if(fe)setFutureExpenses(JSON.parse(fe.value))
         const s=await storageGet('ft_ivasub');if(s)setIvaSubmitted(JSON.parse(s.value))
-      }catch{}
-      setLoaded(true)
+      }catch(err){
+        console.error('❌ Load error:', err)
+      }finally{
+        setLoaded(true)
+      }
     })()
   },[])
   useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_inv',JSON.stringify(invoices));save()}},[invoices,loaded])
@@ -880,6 +883,7 @@ export default function App(){
     XLSX.writeFile(wb,`GreenDash_${mode==='month'?'mensal':'anual'}_${todayStr}.xlsx`)
     setShowExportMenu(false)
   }
+  const invDocs=useMemo(()=>invoices.flatMap(inv=>(inv.attachments||[]).map(a=>({dateStr:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),file:a}))),[invoices])
   const expDocs=useMemo(()=>expenses.flatMap(exp=>(exp.attachments||[]).map(a=>({dateStr:exp.date,label:exp.name,file:a}))),[expenses])
   const prrDocs=useMemo(()=>grantExps.filter(ge=>ge.invoiceFile).map(ge=>({dateStr:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),category:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'Sem categoria',file:ge.invoiceFile})),[grantExps])
 
