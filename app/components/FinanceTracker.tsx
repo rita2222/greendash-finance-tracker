@@ -48,7 +48,7 @@ const fmtD=d=>d?new Date(d+'T12:00:00').toLocaleDateString('pt-PT'):'—'
 const ym=d=>d?d.slice(0,7):''
 const nowYM=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
 const fmtBytes=b=>b<1024?`${b}B`:b<1048576?`${(b/1024).toFixed(1)}KB`:`${(b/1048576).toFixed(1)}MB`
-const FICON=t=>!t?'📎':t.startsWith('image/')?'🖼️':t==='application/pdf'?'📕':t.includes('word')?'📝':t.includes('excel')||t.includes('sheet')?'📊':'📎'
+const FICON=t=>!t?'📎':t.startsWith('image/')?'🖼️':t==='application/pdf'?'📕':t.includes('word')?'📝':t.includes('excel')||t.includes('sheet')?'📊':'📎';const openFile=a=>{const w=window.open();if(w)w.document.write(`<title>${a.name}</title><body style="margin:0"><iframe src="data:${a.mime};base64,${a.data}" style="border:none;width:100%;height:100vh"></iframe></body>`)}
 const pct=(a,b)=>b===0?0:Math.min(100,(a/b)*100)
 const ivaAmt=(amount,rate)=>Number(amount)*(Number(rate||0)/100)
 const qDeadline=(q,y)=>{const mo=[4,7,10,1][q-1];return new Date(q===4?y+1:y,mo,20)}
@@ -138,7 +138,7 @@ function FileUploadZone({attachments,onAdd,onRemove}){
         <input ref={ref} type="file" multiple style={{display:'none'}} onChange={e=>add(e.target.files)}/>
       </div>
       {attachments.map((a,i)=>(
-        <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',background:'#f8fafc',borderRadius:8,marginTop:4,border:'1px solid #e2e8f0'}}>
+        <div key={i} onClick={()=>openFile(a)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',background:'#f8fafc',borderRadius:8,marginTop:4,border:'1px solid #e2e8f0',cursor:'pointer'}}>
           <span>{FICON(a.type)}</span>
           <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</div><div style={{fontSize:10,color:'#94a3b8'}}>{fmtBytes(a.size)}</div></div>
           <button onClick={e=>{e.stopPropagation();onRemove(i)}} style={{border:'none',background:'#fee2e2',color:'#dc2626',borderRadius:6,padding:'3px 7px',fontSize:11,cursor:'pointer'}}>✕</button>
