@@ -104,7 +104,7 @@ const PRR_BUDGET=172759.76,PRR_REIMB=129569.82,PRR_ADVANCE=38870.95
 const IVA_RATES=[{v:0,l:'0% — Isento'},{v:6,l:'6%'},{v:13,l:'13%'},{v:23,l:'23%'}]
 
 const blankInv=()=>({id:0,client:'',desc:'',amount:'',issued:todayStr,due:'',status:'unpaid',ivaRate:23,ivaLines:[],createdAt:new Date().toISOString(),attachments:[]})
-const blankExp=()=>({id:0,name:'',cat:'',amount:0,type:'one-off',day:1,date:todayStr,paid:false,ivaRate:23,ivaLines:[],ivaDeductible:true,createdAt:new Date().toISOString(),attachments:[]})
+const blankExp=()=>({id:0,name:'',cat:'',amount:0,type:'one-off',day:1,date:todayStr,paid:false,ivaRate:23,ivaLines:[],ivaDeductible:true,notes:'',createdAt:new Date().toISOString(),attachments:[]})
 const blankGExp=()=>({id:0,grantId:'PRR',categoryId:'',name:'',supplier:'',amount:'',date:todayStr,ivaRate:23,invoiceFile:null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',notes:'',createdAt:new Date().toISOString()})
 const blankFutureExp=()=>({id:0,name:'',cat:'',amount:'',ivaRate:23,ivaDeductible:true,type:'recurring',date:todayStr,frequency:'monthly',dayOfMonth:1,nextDue:'',isPRR:false,prrCategoryId:'',notes:'',createdAt:new Date().toISOString()})
 
@@ -398,7 +398,7 @@ function ExpenseModal({exp,onSave,onClose}){
           <Field label="Categoria / Fornecedor" value={f.cat} onChange={v=>set('cat',v)}/>
           <Field label="Data" value={f.date} onChange={v=>set('date',v)} type="date"/>
           <IvaLinesEditor lines={lines} setLines={setLines} ivaDeductible={f.ivaDeductible} setIvaDeductible={v=>set('ivaDeductible',v)} showDeductible={true}/>
-          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
+          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label><Field label="Notas" value={f.notes||''} onChange={v=>set('notes',v)}/>
           <FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
@@ -1232,8 +1232,8 @@ export default function App(){
               const regList=allTime?expenses:expenses.filter(e=>ym(e.date)===selYM)
               const prrList=allTime?grantExps:grantExps.filter(e=>ym(e.date)===selYM)
               const combined=[
-                ...regList.map(e=>({key:`exp-${e.id}`,name:e.name,sub:e.cat,date:e.date,total:Number(e.amount)+linesIva(getLines(e)),hasIva:linesIva(getLines(e))>0,isPRR:false,paid:e.paid,attachments:e.attachments||[],onEdit:()=>setExpForm({...e}),onDel:()=>delExp(e.id),onToggle:()=>toggleExpPaid(e.id)})),
-                ...prrList.map(ge=>({key:`ge-${ge.id}`,name:ge.name,sub:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'',date:ge.date,total:Number(ge.amount),hasIva:Number(ge.ivaRate||0)>0,isPRR:true,paid:!!(ge.submittedDate||ge.reimbursementDate),attachments:[],onEdit:()=>setGexpForm({...ge}),onDel:()=>delGexp(ge.id),onToggle:null}))
+                ...regList.map(e=>({key:`exp-${e.id}`,name:e.name,sub:e.cat,date:e.date,total:Number(e.amount)+linesIva(getLines(e)),hasIva:linesIva(getLines(e))>0,isPRR:false,paid:e.paid,notes:e.notes||'',attachments:e.attachments||[],onEdit:()=>setExpForm({...e}),onDel:()=>delExp(e.id),onToggle:()=>toggleExpPaid(e.id)})),
+                ...prrList.map(ge=>({key:`ge-${ge.id}`,name:ge.name,sub:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'',date:ge.date,total:Number(ge.amount),hasIva:Number(ge.ivaRate||0)>0,isPRR:true,paid:!!(ge.submittedDate||ge.reimbursementDate),notes:ge.notes||'',attachments:[],onEdit:()=>setGexpForm({...ge}),onDel:()=>delGexp(ge.id),onToggle:null}))
               ].sort((a,b)=>b.date.localeCompare(a.date))
               const totalReg=combined.reduce((s,i)=>s+i.total,0)
               return(
@@ -1254,7 +1254,7 @@ export default function App(){
                                 {item.name}
                                 {item.isPRR&&<span style={{background:'#dbeafe',color:'#1d4ed8',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>PRR</span>}
                               </div>
-                              <div style={{fontSize:11,color:'#94a3b8'}}>{item.sub}{item.sub?' · ':''}{fmtD(item.date)}{item.hasIva&&<span style={{color:'#7c3aed'}}> · IVA incl.</span>}</div>
+                              <div style={{fontSize:11,color:'#94a3b8'}}>{item.sub}{item.sub?' · ':''}{fmtD(item.date)}{item.hasIva&&<span style={{color:'#7c3aed'}}> · IVA incl.</span>}</div>{item.notes&&<div style={{fontSize:11,color:'#64748b',fontStyle:'italic',marginTop:2}}>📝 {item.notes}</div>}
                               <AttachmentChips attachments={item.attachments}/>
                             </div>
                             <span style={{fontWeight:700,fontSize:14}}>{fmt(item.total)}</span>
