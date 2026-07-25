@@ -813,7 +813,7 @@ export default function App(){
     const entries=[]
     invoices.forEach(inv=>entries.push({key:`inv-${inv.id}`,date:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),amount:Number(inv.amount),flow:'in',settled:inv.status==='paid',tag:null}))
     expenses.filter(e=>e.date).forEach(exp=>entries.push({key:`exp-${exp.id}`,date:exp.date,label:exp.name+(exp.cat?` · ${exp.cat}`:''),amount:Number(exp.amount)+linesIva(getLines(exp)),flow:'out',settled:!!exp.paid,tag:null}))
-    grantExps.forEach(ge=>{const cat=PRR_CATS.find(c=>c.id===ge.categoryId);entries.push({key:`ge-${ge.id}`,date:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),amount:Number(ge.amount),flow:'out',settled:!!(ge.submittedDate||ge.reimbursementDate),tag:'PRR',prrCat:cat?.label})})
+    grantExps.forEach(ge=>{const cat=PRR_CATS.find(c=>c.id===ge.categoryId);entries.push({key:`ge-${ge.id}`,date:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),amount:Number(ge.amount),flow:'out',settled:true,tag:'PRR',prrCat:cat?.label})})
     // Future expenses as projected (next occurrence)
     futureExpenses.forEach(fe=>{
       const d=feDueDate(fe)
