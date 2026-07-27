@@ -103,8 +103,8 @@ const PRR_CATS=[
 const PRR_BUDGET=172759.76,PRR_REIMB=129569.82,PRR_ADVANCE=38870.95
 const IVA_RATES=[{v:0,l:'0% — Isento'},{v:6,l:'6%'},{v:13,l:'13%'},{v:23,l:'23%'}]
 
-const blankInv=()=>({id:0,client:'',desc:'',amount:'',issued:todayStr,due:'',status:'unpaid',ivaRate:23,ivaLines:[],createdAt:new Date().toISOString(),attachments:[]})
-const blankExp=()=>({id:0,name:'',cat:'',amount:0,type:'one-off',day:1,date:todayStr,paid:false,ivaRate:23,ivaLines:[],ivaDeductible:true,notes:'',createdAt:new Date().toISOString(),attachments:[]})
+const blankInv=()=>({id:0,client:'',desc:'',amount:'',issued:todayStr,due:'',status:'unpaid',ivaRate:23,ivaLines:[],alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
+const blankExp=()=>({id:0,name:'',cat:'',amount:0,type:'one-off',day:1,date:todayStr,paid:false,ivaRate:23,ivaLines:[],ivaDeductible:true,notes:'',alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
 const blankGExp=()=>({id:0,grantId:'PRR',categoryId:'',name:'',supplier:'',amount:'',date:todayStr,ivaRate:23,invoiceFile:null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',notes:'',createdAt:new Date().toISOString()})
 const blankFutureExp=()=>({id:0,name:'',cat:'',amount:'',ivaRate:23,ivaDeductible:true,type:'recurring',date:todayStr,frequency:'monthly',dayOfMonth:1,nextDue:'',isPRR:false,prrCategoryId:'',notes:'',createdAt:new Date().toISOString()})
 
@@ -353,9 +353,10 @@ function InvoiceModal({inv,onSave,onClose}){
             <label style={{fontSize:12,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>Estado</label>
             <select value={f.status} onChange={e=>set('status',e.target.value)} style={{width:'100%',padding:'8px 12px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,fontFamily:'inherit',background:'white'}}>
               <option value="unpaid">⏳ Por receber</option><option value="paid">✓ Recebida</option>
-            </select>
-          </div>
-          <FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
+</select>
+</div>
+<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:`1px solid ${f.alertTag?'#fecaca':'#e2e8f0'}`}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
+<FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
           <button onClick={onClose} style={{flex:1,padding:'10px',border:'1px solid #e2e8f0',borderRadius:8,background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#64748b'}}>Cancelar</button>
@@ -398,7 +399,9 @@ function ExpenseModal({exp,onSave,onClose}){
           <Field label="Categoria / Fornecedor" value={f.cat} onChange={v=>set('cat',v)}/>
           <Field label="Data" value={f.date} onChange={v=>set('date',v)} type="date"/>
           <IvaLinesEditor lines={lines} setLines={setLines} ivaDeductible={f.ivaDeductible} setIvaDeductible={v=>set('ivaDeductible',v)} showDeductible={true}/>
-          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label><Field label="Notas" value={f.notes||''} onChange={v=>set('notes',v)}/>
+          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
+<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:`1px solid ${f.alertTag?'#fecaca':'#e2e8f0'}`}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
+<Field label="Notas" value={f.notes||''} onChange={v=>set('notes',v)}/>
           <FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
@@ -746,7 +749,8 @@ export default function App(){
   const[payModal,setPayModal]=useState(null)
   const[batchModal,setBatchModal]=useState(false)
   const[invFilter,setInvFilter]=useState('all')
-  const[gCatF,setGCatF]=useState('all')
+const[dExpFilter,setDExpFilter]=useState('all')
+const[gCatF,setGCatF]=useState('all')
   const[gStF,setGStF]=useState('all')
   const[cfFilter,setCfFilter]=useState('all')
   const[allTime,setAllTime]=useState(false)
@@ -811,8 +815,8 @@ export default function App(){
 
   const cashflowEntries=useMemo(()=>{
     const entries=[]
-    invoices.forEach(inv=>entries.push({key:`inv-${inv.id}`,date:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),amount:Number(inv.amount),flow:'in',settled:inv.status==='paid',tag:null}))
-    expenses.filter(e=>e.date).forEach(exp=>entries.push({key:`exp-${exp.id}`,date:exp.date,label:exp.name+(exp.cat?` · ${exp.cat}`:''),amount:Number(exp.amount)+linesIva(getLines(exp)),flow:'out',settled:!!exp.paid,tag:null}))
+    invoices.forEach(inv=>entries.push({key:`inv-${inv.id}`,date:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),amount:Number(inv.amount),flow:'in',settled:inv.status==='paid',tag:null,alertTag:!!inv.alertTag}))
+expenses.filter(e=>e.date).forEach(exp=>entries.push({key:`exp-${exp.id}`,date:exp.date,label:exp.name+(exp.cat?` · ${exp.cat}`:''),amount:Number(exp.amount)+linesIva(getLines(exp)),flow:'out',settled:!!exp.paid,tag:null,alertTag:!!exp.alertTag}))
     grantExps.forEach(ge=>{const cat=PRR_CATS.find(c=>c.id===ge.categoryId);entries.push({key:`ge-${ge.id}`,date:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),amount:Number(ge.amount),flow:'out',settled:true,tag:'PRR',prrCat:cat?.label})})
     // Future expenses as projected (next occurrence)
     futureExpenses.forEach(fe=>{
@@ -842,13 +846,14 @@ export default function App(){
   },[futureExpenses,nextYM])
 
   const filteredCf=useMemo(()=>{
-    if(cfFilter==='all')return cashflowEntries
-    if(cfFilter==='in')return cashflowEntries.filter(e=>e.flow==='in')
-    if(cfFilter==='out')return cashflowEntries.filter(e=>e.flow==='out')
-    if(cfFilter==='prr')return cashflowEntries.filter(e=>e.tag==='PRR')
-    if(cfFilter==='unsettled')return cashflowEntries.filter(e=>!e.settled)
-    return cashflowEntries
-  },[cashflowEntries,cfFilter])
+if(cfFilter==='all')return cashflowEntries
+if(cfFilter==='in')return cashflowEntries.filter(e=>e.flow==='in')
+if(cfFilter==='out')return cashflowEntries.filter(e=>e.flow==='out')
+if(cfFilter==='prr')return cashflowEntries.filter(e=>e.tag==='PRR')
+if(cfFilter==='alert')return cashflowEntries.filter(e=>e.alertTag)
+if(cfFilter==='unsettled')return cashflowEntries.filter(e=>!e.settled)
+return cashflowEntries
+},[cashflowEntries,cfFilter])
 
   const ivaStats=useMemo(()=>{
     const startMo=(ivaQ-1)*3;const endMo=startMo+2
@@ -932,11 +937,12 @@ export default function App(){
   }
 
   const visibleInv=useMemo(()=>{
-    let l=allTime?invoices:invoices.filter(i=>ym(i.issued)===selYM)
-    if(invFilter==='paid')l=l.filter(i=>i.status==='paid')
-    if(invFilter==='unpaid')l=l.filter(i=>i.status==='unpaid')
-    return l.sort((a,b)=>b.issued.localeCompare(a.issued))
-  },[invoices,selYM,invFilter,allTime])
+let l=allTime?invoices:invoices.filter(i=>ym(i.issued)===selYM)
+if(invFilter==='paid')l=l.filter(i=>i.status==='paid')
+if(invFilter==='unpaid')l=l.filter(i=>i.status==='unpaid')
+if(invFilter==='alert')l=l.filter(i=>i.alertTag)
+return l.sort((a,b)=>b.issued.localeCompare(a.issued))
+},[invoices,selYM,invFilter,allTime])
   const oooFilter=e=>ym(e.date)===(allTime?ym(e.date):selYM)||allTime
 
   const filteredGexp=useMemo(()=>{
@@ -1075,7 +1081,7 @@ export default function App(){
                 <div style={{fontWeight:700,fontSize:14}}>Fluxo de Caixa</div>
                 <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:12,color:'#64748b'}}>Saldo:</span><span style={{fontSize:15,fontWeight:800,color:currentBalance>=0?'#16a34a':'#dc2626'}}>{fmt(currentBalance)}</span></div>
                 <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                  {[['all','Tudo'],['in','💰'],['out','💸'],['prr','PRR'],['unsettled','⏳']].map(([k,l])=><SBtn key={k} k={k} active={cfFilter===k} onClick={()=>setCfFilter(k)}>{l}</SBtn>)}
+                  {[['all','Tudo'],['in','💰'],['out','💸'],['prr','PRR'],['alert','🚩'],['unsettled','⏳']].map(([k,l])=><SBtn key={k} k={k} active={cfFilter===k} onClick={()=>setCfFilter(k)}>{l}</SBtn>)}
                 </div>
               </div>
               {filteredCf.length===0?<div style={{padding:'20px',textAlign:'center',color:'#94a3b8',fontSize:13}}>Sem transações</div>:(
@@ -1088,8 +1094,9 @@ export default function App(){
                           <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
                             <span style={{fontSize:12,fontWeight:600}}>{e.label}</span>
                             {e.tag==='PRR'&&<span style={{background:'#f1f5f9',color:'#475569',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>PRR</span>}
-                            {e.tag==='future'&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🗓️ prev.</span>}
-                            {!e.settled&&e.tag!=='future'&&<span style={{background:'#fef3c7',color:'#d97706',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:600}}>⏳</span>}
+{e.tag==='future'&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🗓️ prev.</span>}
+{e.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🚩 Alerta</span>}
+{!e.settled&&e.tag!=='future'&&<span style={{background:'#fef3c7',color:'#d97706',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:600}}>⏳</span>}
                           </div>
                           <div style={{fontSize:10,color:'#94a3b8'}}>{fmtD(e.date)}</div>
                         </div>
@@ -1113,7 +1120,7 @@ export default function App(){
           <div style={{display:'flex',flexDirection:'column',gap:16}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
               <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                {[['all','Todas'],['paid','Recebidas'],['unpaid','Por receber']].map(([k,l])=><SBtn key={k} k={k} active={invFilter===k} onClick={()=>setInvFilter(k)}>{l}</SBtn>)}
+                {[['all','Todas'],['paid','Recebidas'],['unpaid','Por receber'],['alert','🚩 Alerta']].map(([k,l])=><SBtn key={k} k={k} active={invFilter===k} onClick={()=>setInvFilter(k)}>{l}</SBtn>)}
               </div>
               <div style={{display:'flex',gap:6,alignItems:'center'}}>
                 <DlBtn count={invAttachments.length} onClick={()=>dlAll(invAttachments)}/>
@@ -1137,7 +1144,8 @@ export default function App(){
                             <span style={{fontSize:14,fontWeight:700}}>{inv.client}</span>
                             <span style={{background:inv.status==='paid'?'#dcfce7':'#fff7ed',color:inv.status==='paid'?'#16a34a':'#d97706',padding:'2px 7px',borderRadius:99,fontSize:11,fontWeight:700}}>{inv.status==='paid'?'✓ Recebida':'⏳ Por receber'}</span>
                             {ls.map((l,li)=><span key={li} style={{background:'#f3e8ff',color:'#7c3aed',borderRadius:5,padding:'1px 6px',fontSize:10,fontWeight:700}}>{l.rate}%</span>)}
-                          </div>
+{inv.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',borderRadius:5,padding:'1px 6px',fontSize:10,fontWeight:700}}>🚩 Alerta</span>}
+</div>
                           <div style={{fontSize:12,color:'#64748b'}}>{inv.desc}</div>
                           <div style={{fontSize:11,color:'#94a3b8',marginTop:2}}>Emissão {fmtD(inv.issued)} · Venc. {fmtD(inv.due)}</div>
                           <AttachmentChips attachments={inv.attachments}/>
@@ -1232,28 +1240,33 @@ export default function App(){
               const regList=allTime?expenses:expenses.filter(e=>ym(e.date)===selYM)
               const prrList=allTime?grantExps:grantExps.filter(e=>ym(e.date)===selYM)
               const combined=[
-                ...regList.map(e=>({key:`exp-${e.id}`,name:e.name,sub:e.cat,date:e.date,total:Number(e.amount)+linesIva(getLines(e)),hasIva:linesIva(getLines(e))>0,isPRR:false,paid:e.paid,notes:e.notes||'',attachments:e.attachments||[],onEdit:()=>setExpForm({...e}),onDel:()=>delExp(e.id),onToggle:()=>toggleExpPaid(e.id)})),
-                ...prrList.map(ge=>({key:`ge-${ge.id}`,name:ge.name,sub:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'',date:ge.date,total:Number(ge.amount),hasIva:Number(ge.ivaRate||0)>0,isPRR:true,paid:!!(ge.submittedDate||ge.reimbursementDate),notes:ge.notes||'',attachments:[],onEdit:()=>setGexpForm({...ge}),onDel:()=>delGexp(ge.id),onToggle:null}))
-              ].sort((a,b)=>b.date.localeCompare(a.date))
-              const totalReg=combined.reduce((s,i)=>s+i.total,0)
-              return(
-                <div>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                    <div style={{fontWeight:700,fontSize:15}}>💸 Despesas Registadas {!allTime&&<span style={{fontSize:12,fontWeight:400,color:'#94a3b8'}}>{monthLabel}</span>}</div>
-                    <span style={{fontSize:13,fontWeight:700,color:'#dc2626'}}>{fmt(totalReg)}</span>
-                  </div>
-                  {combined.length===0?(
-                    <div style={{padding:'20px',textAlign:'center',color:'#94a3b8',background:'white',borderRadius:12,fontSize:13}}>Sem despesas registadas{!allTime?` em ${monthLabel}`:''}</div>
-                  ):(
-                    <div style={{background:'white',borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',overflow:'hidden'}}>
-                      {combined.map((item,i,arr)=>(
+...regList.map(e=>({key:`exp-${e.id}`,name:e.name,sub:e.cat,date:e.date,total:Number(e.amount)+linesIva(getLines(e)),hasIva:linesIva(getLines(e))>0,isPRR:false,paid:e.paid,notes:e.notes||'',alertTag:!!e.alertTag,attachments:e.attachments||[],onEdit:()=>setExpForm({...e}),onDel:()=>delExp(e.id),onToggle:()=>toggleExpPaid(e.id)})),
+...prrList.map(ge=>({key:`ge-${ge.id}`,name:ge.name,sub:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'',date:ge.date,total:Number(ge.amount),hasIva:Number(ge.ivaRate||0)>0,isPRR:true,paid:!!(ge.submittedDate||ge.reimbursementDate),notes:ge.notes||'',alertTag:false,attachments:[],onEdit:()=>setGexpForm({...ge}),onDel:()=>delGexp(ge.id),onToggle:null}))
+].sort((a,b)=>b.date.localeCompare(a.date))
+const filteredCombined=dExpFilter==='alert'?combined.filter(i=>i.alertTag):combined
+const totalReg=filteredCombined.reduce((s,i)=>s+i.total,0)
+return(
+<div>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}}>
+<div style={{fontWeight:700,fontSize:15}}>💸 Despesas Registadas {!allTime&&<span style={{fontSize:12,fontWeight:400,color:'#94a3b8'}}>{monthLabel}</span>}</div>
+<div style={{display:'flex',gap:5,alignItems:'center'}}>
+{[['all','Todas'],['alert','🚩 Alerta']].map(([k,l])=><SBtn key={k} k={k} active={dExpFilter===k} onClick={()=>setDExpFilter(k)}>{l}</SBtn>)}
+</div>
+<span style={{fontSize:13,fontWeight:700,color:'#dc2626'}}>{fmt(totalReg)}</span>
+</div>
+{filteredCombined.length===0?(
+<div style={{padding:'20px',textAlign:'center',color:'#94a3b8',background:'white',borderRadius:12,fontSize:13}}>Sem despesas registadas{!allTime?` em ${monthLabel}`:''}</div>
+):(
+<div style={{background:'white',borderRadius:12,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',overflow:'hidden'}}>
+{filteredCombined.map((item,i,arr)=>(
                         <div key={item.key} style={{padding:'10px 16px',borderBottom:i<arr.length-1?'1px solid #f1f5f9':'none'}}>
                           <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:5}}>
-                                {item.name}
-                                {item.isPRR&&<span style={{background:'#dbeafe',color:'#1d4ed8',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>PRR</span>}
-                              </div>
+{item.name}
+{item.isPRR&&<span style={{background:'#dbeafe',color:'#1d4ed8',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>PRR</span>}
+{item.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>🚩 Alerta</span>}
+</div>
                               <div style={{fontSize:11,color:'#94a3b8'}}>{item.sub}{item.sub?' · ':''}{fmtD(item.date)}{item.hasIva&&<span style={{color:'#7c3aed'}}> · IVA incl.</span>}</div>{item.notes&&<div style={{fontSize:11,color:'#64748b',fontStyle:'italic',marginTop:2}}>📝 {item.notes}</div>}
                               <AttachmentChips attachments={item.attachments}/>
                             </div>
