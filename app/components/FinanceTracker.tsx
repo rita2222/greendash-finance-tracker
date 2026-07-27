@@ -105,7 +105,7 @@ const IVA_RATES=[{v:0,l:'0% — Isento'},{v:6,l:'6%'},{v:13,l:'13%'},{v:23,l:'23
 
 const blankInv=()=>({id:0,client:'',desc:'',amount:'',issued:todayStr,due:'',status:'unpaid',ivaRate:23,ivaLines:[],alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
 const blankExp=()=>({id:0,name:'',cat:'',amount:0,type:'one-off',day:1,date:todayStr,paid:false,ivaRate:23,ivaLines:[],ivaDeductible:true,notes:'',alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
-const blankGExp=()=>({id:0,grantId:'PRR',categoryId:'',name:'',supplier:'',amount:'',date:todayStr,ivaRate:23,invoiceFile:null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',notes:'',createdAt:new Date().toISOString()})
+const blankGExp=()=>({id:0,grantId:'PRR',categoryId:'',name:'',supplier:'',amount:'',date:todayStr,ivaRate:23,invoiceFile:null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',paid:false,alertTag:false,notes:'',createdAt:new Date().toISOString()})
 const blankFutureExp=()=>({id:0,name:'',cat:'',amount:'',ivaRate:23,ivaDeductible:true,type:'recurring',date:todayStr,frequency:'monthly',dayOfMonth:1,nextDue:'',isPRR:false,prrCategoryId:'',notes:'',createdAt:new Date().toISOString()})
 
 const gexpSt=e=>{
@@ -572,7 +572,9 @@ function GrantExpModal({exp,onSave,onClose}){
           </div>
           {f.amount&&Number(f.ivaRate)>0&&<div style={{fontSize:11,color:'#64748b'}}>Base s/ IVA: <strong>{fmt(Number(f.amount)/(1+Number(f.ivaRate)/100))}</strong></div>}
           {f.amount&&<div style={{fontSize:11,color:'#16a34a'}}>💡 Reembolso esperado (75% da base): <strong>{fmt(Number(f.amount)/(1+(Number(f.ivaRate)||0)/100)*0.75)}</strong></div>}
-          <div style={{background:f.invoiceFile?'#f0fdf4':'#fff5f5',border:`2px solid ${f.invoiceFile?'#bbf7d0':'#fecaca'}`,borderRadius:10,padding:12}}>
+<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
+<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:`1px solid ${f.alertTag?'#fecaca':'#e2e8f0'}`}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
+<div style={{background:f.invoiceFile?'#f0fdf4':'#fff5f5',border:`2px solid ${f.invoiceFile?'#bbf7d0':'#fecaca'}`,borderRadius:10,padding:12}}>
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}><span>{f.invoiceFile?'✅':'⚠️'}</span><span style={{fontSize:12,fontWeight:700,color:f.invoiceFile?'#16a34a':'#dc2626'}}>{f.invoiceFile?'Fatura anexada':'Fatura obrigatória'}</span></div>
             {f.invoiceFile?(
               <div style={{display:'flex',alignItems:'center',gap:8,background:'white',borderRadius:8,padding:'8px 10px',border:'1px solid #bbf7d0'}}>
@@ -817,7 +819,7 @@ const[gCatF,setGCatF]=useState('all')
     const entries=[]
     invoices.forEach(inv=>entries.push({key:`inv-${inv.id}`,date:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),amount:Number(inv.amount),flow:'in',settled:inv.status==='paid',tag:null,alertTag:!!inv.alertTag}))
 expenses.filter(e=>e.date).forEach(exp=>entries.push({key:`exp-${exp.id}`,date:exp.date,label:exp.name+(exp.cat?` · ${exp.cat}`:''),amount:Number(exp.amount)+linesIva(getLines(exp)),flow:'out',settled:!!exp.paid,tag:null,alertTag:!!exp.alertTag}))
-    grantExps.forEach(ge=>{const cat=PRR_CATS.find(c=>c.id===ge.categoryId);entries.push({key:`ge-${ge.id}`,date:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),amount:Number(ge.amount),flow:'out',settled:true,tag:'PRR',prrCat:cat?.label})})
+    grantExps.forEach(ge=>{const cat=PRR_CATS.find(c=>c.id===ge.categoryId);entries.push({key:`ge-${ge.id}`,date:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),amount:Number(ge.amount),flow:'out',settled:!!ge.paid,tag:'PRR',prrCat:cat?.label,alertTag:!!ge.alertTag})})
     // Future expenses as projected (next occurrence)
     futureExpenses.forEach(fe=>{
       const d=feDueDate(fe)
@@ -900,7 +902,8 @@ return cashflowEntries
   const toggleExpPaid=id=>setExpenses(p=>p.map(e=>e.id===id?{...e,paid:!e.paid}:e))
   const saveGexp=exp=>{const n={...exp,id:exp.id||Date.now(),amount:Number(exp.amount)};setGrantExps(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setGexpForm(null)}
   const delGexp=id=>setGrantExps(p=>p.filter(e=>e.id!==id))
-  const saveFutureExp=fe=>{const n={...fe,id:fe.id||Date.now()};setFutureExpenses(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setFutureForm(null)}
+const toggleGexpPaid=id=>setGrantExps(p=>p.map(e=>e.id===id?{...e,paid:!e.paid}:e))
+const saveFutureExp=fe=>{const n={...fe,id:fe.id||Date.now()};setFutureExpenses(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setFutureForm(null)}
   const delFutureExp=id=>setFutureExpenses(p=>p.filter(e=>e.id!==id))
 
   const payFutureExp=(fexp,{lines,file,ivaDeductible})=>{
@@ -909,7 +912,7 @@ return cashflowEntries
     const id=Date.now()
     const fa=file?[file]:[]
     if(fexp.isPRR){
-      setGrantExps(p=>[...p,{id,grantId:'PRR',categoryId:fexp.prrCategoryId||'',name:fexp.name,supplier:fexp.cat,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??0,date:todayStr,invoiceFile:file||null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',notes:'',createdAt:new Date().toISOString()}])
+      setGrantExps(p=>[...p,{id,grantId:'PRR',categoryId:fexp.prrCategoryId||'',name:fexp.name,supplier:fexp.cat,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??0,date:todayStr,invoiceFile:file||null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',paid:true,alertTag:false,notes:'',createdAt:new Date().toISOString()}])
     }else{
       setExpenses(p=>[...p,{id,name:fexp.name,cat:fexp.cat,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??0,type:'one-off',day:1,date:todayStr,paid:true,ivaDeductible,createdAt:new Date().toISOString(),attachments:fa}])
     }
@@ -930,7 +933,7 @@ return cashflowEntries
       const totalBase=item.ivaLines?.reduce((s,l)=>s+Number(l.base||0),0)||0
       const cleanLines=(item.ivaLines||[]).filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}))
       if(item.saveAs==='invoice')setInvoices(p=>[...p,{id,client:item.supplier||'Importado',desc:item.description,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??23,issued:item.date||todayStr,due:'',status:'unpaid',createdAt:new Date().toISOString(),attachments:fa}])
-      else if(item.saveAs==='grant')setGrantExps(p=>[...p,{id,grantId:'PRR',categoryId:item.grantCategoryId||'',name:item.description||'Importado',supplier:item.supplier,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??23,date:item.date||todayStr,invoiceFile:item.file||null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',notes:'',createdAt:new Date().toISOString()}])
+      else if(item.saveAs==='grant')setGrantExps(p=>[...p,{id,grantId:'PRR',categoryId:item.grantCategoryId||'',name:item.description||'Importado',supplier:item.supplier,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??23,date:item.date||todayStr,invoiceFile:item.file||null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',paid:false,alertTag:false,notes:'',createdAt:new Date().toISOString()}])
       else setExpenses(p=>[...p,{id,name:item.description||'Importado',cat:'',amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??23,type:'one-off',day:1,date:item.date||todayStr,paid:false,ivaDeductible:true,createdAt:new Date().toISOString(),attachments:fa}])
     })
     setBatchModal(false)
@@ -1241,7 +1244,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
               const prrList=allTime?grantExps:grantExps.filter(e=>ym(e.date)===selYM)
               const combined=[
 ...regList.map(e=>({key:`exp-${e.id}`,name:e.name,sub:e.cat,date:e.date,total:Number(e.amount)+linesIva(getLines(e)),hasIva:linesIva(getLines(e))>0,isPRR:false,paid:e.paid,notes:e.notes||'',alertTag:!!e.alertTag,attachments:e.attachments||[],onEdit:()=>setExpForm({...e}),onDel:()=>delExp(e.id),onToggle:()=>toggleExpPaid(e.id)})),
-...prrList.map(ge=>({key:`ge-${ge.id}`,name:ge.name,sub:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'',date:ge.date,total:Number(ge.amount),hasIva:Number(ge.ivaRate||0)>0,isPRR:true,paid:!!(ge.submittedDate||ge.reimbursementDate),notes:ge.notes||'',alertTag:false,attachments:[],onEdit:()=>setGexpForm({...ge}),onDel:()=>delGexp(ge.id),onToggle:null}))
+...prrList.map(ge=>({key:`ge-${ge.id}`,name:ge.name,sub:PRR_CATS.find(c=>c.id===ge.categoryId)?.label||'',date:ge.date,total:Number(ge.amount),hasIva:Number(ge.ivaRate||0)>0,isPRR:true,paid:!!ge.paid,notSubmitted:!ge.submittedDate&&!ge.reimbursementDate,notes:ge.notes||'',alertTag:!!ge.alertTag,attachments:[],onEdit:()=>setGexpForm({...ge}),onDel:()=>delGexp(ge.id),onToggle:()=>toggleGexpPaid(ge.id)}))
 ].sort((a,b)=>b.date.localeCompare(a.date))
 const filteredCombined=dExpFilter==='alert'?combined.filter(i=>i.alertTag):combined
 const totalReg=filteredCombined.reduce((s,i)=>s+i.total,0)
@@ -1265,6 +1268,7 @@ return(
                               <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:5}}>
 {item.name}
 {item.isPRR&&<span style={{background:'#dbeafe',color:'#1d4ed8',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>PRR</span>}
+{item.notSubmitted&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>📤 Não submetido no PRR</span>}
 {item.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',borderRadius:4,padding:'1px 6px',fontSize:9,fontWeight:800}}>🚩 Alerta</span>}
 </div>
                               <div style={{fontSize:11,color:'#94a3b8'}}>{item.sub}{item.sub?' · ':''}{fmtD(item.date)}{item.hasIva&&<span style={{color:'#7c3aed'}}> · IVA incl.</span>}</div>{item.notes&&<div style={{fontSize:11,color:'#64748b',fontStyle:'italic',marginTop:2}}>📝 {item.notes}</div>}
@@ -1441,8 +1445,10 @@ return(
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:2}}>
                               <span style={{fontSize:14,fontWeight:700}}>{e.name}</span>
-                              <span style={{background:st.bg,color:st.color,padding:'2px 7px',borderRadius:99,fontSize:10,fontWeight:700}}>{st.icon} {st.label}</span>
-                            </div>
+<span style={{background:st.bg,color:st.color,padding:'2px 7px',borderRadius:99,fontSize:10,fontWeight:700}}>{st.icon} {st.label}</span>
+{e.paid&&<span style={{background:'#dcfce7',color:'#16a34a',padding:'2px 7px',borderRadius:99,fontSize:10,fontWeight:700}}>✓ Pago</span>}
+{e.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',padding:'2px 7px',borderRadius:99,fontSize:10,fontWeight:700}}>🚩 Alerta</span>}
+</div>
                             {e.supplier&&<div style={{fontSize:12,color:'#64748b'}}>🏢 {e.supplier}</div>}
                             <div style={{fontSize:11,color:'#94a3b8'}}>{cat?.label} · {fmtD(e.date)}</div>
                             <div style={{display:'flex',gap:5,marginTop:4,flexWrap:'wrap'}}>
