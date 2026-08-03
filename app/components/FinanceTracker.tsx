@@ -103,7 +103,7 @@ const PRR_CATS=[
 const PRR_BUDGET=172759.76,PRR_REIMB=129569.82,PRR_ADVANCE=38870.95
 const IVA_RATES=[{v:0,l:'0% — Isento'},{v:6,l:'6%'},{v:13,l:'13%'},{v:23,l:'23%'}]
 
-const blankInv=()=>({id:0,client:'',desc:'',amount:'',issued:todayStr,due:'',status:'unpaid',ivaRate:23,ivaLines:[],alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
+const blankInv=()=>({id:0,type:'venda',client:'',desc:'',amount:'',issued:todayStr,due:'',status:'unpaid',ivaRate:23,ivaLines:[],alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
 const blankExp=()=>({id:0,name:'',cat:'',amount:0,type:'one-off',day:1,date:todayStr,paid:false,ivaRate:23,ivaLines:[],ivaDeductible:true,notes:'',alertTag:false,createdAt:new Date().toISOString(),attachments:[]})
 const blankGExp=()=>({id:0,grantId:'PRR',categoryId:'',name:'',supplier:'',amount:'',date:todayStr,ivaRate:23,invoiceFile:null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',paid:false,alertTag:false,notes:'',createdAt:new Date().toISOString()})
 const blankFutureExp=()=>({id:0,name:'',cat:'',amount:'',ivaRate:23,ivaDeductible:true,type:'recurring',date:todayStr,frequency:'monthly',dayOfMonth:1,nextDue:'',isPRR:false,prrCategoryId:'',notes:'',createdAt:new Date().toISOString()})
@@ -341,7 +341,7 @@ function InvoiceModal({inv,onSave,onClose}){
           <button onClick={onClose} style={{border:'none',background:'#f1f5f9',borderRadius:8,width:32,height:32,cursor:'pointer',fontSize:16}}>✕</button>
         </div>
         <div style={{display:'flex',flexDirection:'column',gap:13}}>
-          <AiDocStrip onExtracted={onExtracted} addAttachment={a=>set('attachments',[...f.attachments,a])}/>
+          <AiDocStrip onExtracted={onExtracted} addAttachment={a=>set('attachments',[...f.attachments,a])}/><div style={{display:'flex',gap:8}}><button onClick={()=>set('type','venda')} style={{flex:1,padding:'8px',border:`2px solid ${(f.type||'venda')==='venda'?'#16a34a':'#e2e8f0'}`,borderRadius:8,background:(f.type||'venda')==='venda'?'#f0fdf4':'white',cursor:'pointer',fontSize:13,fontWeight:600,color:(f.type||'venda')==='venda'?'#16a34a':'#64748b'}}>💰 Venda</button><button onClick={()=>set('type','premio')} style={{flex:1,padding:'8px',border:`2px solid ${f.type==='premio'?'#16a34a':'#e2e8f0'}`,borderRadius:8,background:f.type==='premio'?'#f0fdf4':'white',cursor:'pointer',fontSize:13,fontWeight:600,color:f.type==='premio'?'#16a34a':'#64748b'}}>🏆 Prémio</button></div>
           <Field label="Cliente" value={f.client} onChange={v=>set('client',v)} required/>
           <Field label="Descrição" value={f.desc} onChange={v=>set('desc',v)}/>
           <IvaLinesEditor lines={lines} setLines={setLines} showDeductible={false}/>
@@ -366,7 +366,7 @@ function InvoiceModal({inv,onSave,onClose}){
     </div>
   )
 }
-function ExpenseModal({exp,onSave,onClose}){
+function ExpenseModal({exp,onSave,onClose,onConvert}){
   const initLines=()=>exp.ivaLines?.length?exp.ivaLines.map(l=>({base:String(l.base),rate:l.rate})):exp.amount?[{base:String(exp.amount),rate:exp.ivaRate??23}]:[{base:'',rate:23}]
   const[f,setF]=useState({ivaDeductible:true,...exp,attachments:[...(exp.attachments||[])]})
   const[lines,setLines]=useState(initLines)
@@ -401,7 +401,7 @@ function ExpenseModal({exp,onSave,onClose}){
           <IvaLinesEditor lines={lines} setLines={setLines} ivaDeductible={f.ivaDeductible} setIvaDeductible={v=>set('ivaDeductible',v)} showDeductible={true}/>
           <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
 <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:`1px solid ${f.alertTag?'#fecaca':'#e2e8f0'}`}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
-<Field label="Notas" value={f.notes||''} onChange={v=>set('notes',v)}/>
+<Field label="Notas" value={f.notes||''} onChange={v=>set('notes',v)}/><button onClick={()=>onConvert(f,lines)} style={{border:'1px dashed #93c5fd',background:'#eff6ff',color:'#1d4ed8',borderRadius:8,padding:'9px 10px',fontSize:12,fontWeight:700,cursor:'pointer'}}>🏛️ Transformar em Despesa PRR</button>
           <FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
@@ -755,6 +755,7 @@ const[dExpFilter,setDExpFilter]=useState('all')
 const[gCatF,setGCatF]=useState('all')
   const[gStF,setGStF]=useState('all')
   const[cfFilter,setCfFilter]=useState('all')
+    const[cfExpanded,setCfExpanded]=useState(false)
   const[allTime,setAllTime]=useState(false)
   const[loaded,setLoaded]=useState(false)
 
@@ -817,7 +818,7 @@ const[gCatF,setGCatF]=useState('all')
 
   const cashflowEntries=useMemo(()=>{
     const entries=[]
-    invoices.forEach(inv=>entries.push({key:`inv-${inv.id}`,date:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),amount:Number(inv.amount),flow:'in',settled:inv.status==='paid',tag:null,alertTag:!!inv.alertTag}))
+    invoices.forEach(inv=>entries.push({key:`inv-${inv.id}`,date:inv.issued,label:inv.client+(inv.desc?` — ${inv.desc}`:''),amount:Number(inv.amount),flow:'in',settled:inv.status==='paid',tag:inv.type==='premio'?'premio':null,alertTag:!!inv.alertTag}))
 expenses.filter(e=>e.date).forEach(exp=>entries.push({key:`exp-${exp.id}`,date:exp.date,label:exp.name+(exp.cat?` · ${exp.cat}`:''),amount:Number(exp.amount)+linesIva(getLines(exp)),flow:'out',settled:!!exp.paid,tag:null,alertTag:!!exp.alertTag}))
     grantExps.forEach(ge=>{const cat=PRR_CATS.find(c=>c.id===ge.categoryId);entries.push({key:`ge-${ge.id}`,date:ge.date,label:ge.name+(ge.supplier?` — ${ge.supplier}`:''),amount:Number(ge.amount),flow:'out',settled:!!ge.paid,tag:'PRR',prrCat:cat?.label,alertTag:!!ge.alertTag})})
     // Future expenses as projected (next occurrence)
@@ -899,7 +900,7 @@ return cashflowEntries
   const toggleInvSt=id=>setInvoices(p=>p.map(i=>i.id===id?{...i,status:i.status==='paid'?'unpaid':'paid'}:i))
   const saveExp=exp=>{const n={...exp,id:exp.id||Date.now(),amount:Number(exp.amount)};setExpenses(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setExpForm(null)}
   const delExp=id=>setExpenses(p=>p.filter(e=>e.id!==id))
-  const toggleExpPaid=id=>setExpenses(p=>p.map(e=>e.id===id?{...e,paid:!e.paid}:e))
+  const toggleExpPaid=id=>setExpenses(p=>p.map(e=>e.id===id?{...e,paid:!e.paid}:e));const convertExpToGrant=(exp,lines)=>{const cleanLines=lines.filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}));const totalBase=cleanLines.reduce((s,l)=>s+Number(l.base||0),0);const totalWithIva=totalBase+linesIva(cleanLines);if(exp.id)setExpenses(p=>p.filter(e=>e.id!==exp.id));setExpForm(null);setGexpForm({id:0,grantId:'PRR',categoryId:'',name:exp.name||'',supplier:exp.cat||'',amount:totalWithIva,date:exp.date||todayStr,ivaRate:cleanLines[0]?.rate??Number(exp.ivaRate||23),invoiceFile:(exp.attachments&&exp.attachments[0])||null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',paid:!!exp.paid,alertTag:!!exp.alertTag,notes:exp.notes||'',createdAt:new Date().toISOString()})}
   const saveGexp=exp=>{const n={...exp,id:exp.id||Date.now(),amount:Number(exp.amount)};setGrantExps(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setGexpForm(null)}
   const delGexp=id=>setGrantExps(p=>p.filter(e=>e.id!==id))
 const toggleGexpPaid=id=>setGrantExps(p=>p.map(e=>e.id===id?{...e,paid:!e.paid}:e))
@@ -943,7 +944,7 @@ const saveFutureExp=fe=>{const n={...fe,id:fe.id||Date.now()};setFutureExpenses(
 let l=allTime?invoices:invoices.filter(i=>ym(i.issued)===selYM)
 if(invFilter==='paid')l=l.filter(i=>i.status==='paid')
 if(invFilter==='unpaid')l=l.filter(i=>i.status==='unpaid')
-if(invFilter==='alert')l=l.filter(i=>i.alertTag)
+if(invFilter==='alert')l=l.filter(i=>i.alertTag);if(invFilter==='premio')l=l.filter(i=>i.type==='premio')
 return l.sort((a,b)=>b.issued.localeCompare(a.issued))
 },[invoices,selYM,invFilter,allTime])
   const oooFilter=e=>ym(e.date)===(allTime?ym(e.date):selYM)||allTime
@@ -1089,7 +1090,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
               </div>
               {filteredCf.length===0?<div style={{padding:'20px',textAlign:'center',color:'#94a3b8',fontSize:13}}>Sem transações</div>:(
                 <>
-                  {filteredCf.slice(0,20).map((e,i,arr)=>(
+                  {(cfExpanded?filteredCf:filteredCf.slice(0,20)).map((e,i,arr)=>(
                     <div key={e.key} style={{padding:'9px 16px',borderBottom:i<arr.length-1?'1px solid #f1f5f9':'none',opacity:e.settled?1:0.65}}>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
                         <div style={{width:28,height:28,borderRadius:7,background:e.flow==='in'?'#dcfce7':'#fee2e2',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{e.flow==='in'?'↓':'↑'}</div>
@@ -1097,7 +1098,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
                           <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
                             <span style={{fontSize:12,fontWeight:600}}>{e.label}</span>
                             {e.tag==='PRR'&&<span style={{background:'#f1f5f9',color:'#475569',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>PRR</span>}
-{e.tag==='future'&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🗓️ prev.</span>}
+{e.tag==='future'&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🗓️ prev.</span>}{e.tag==='premio'&&<span style={{background:'#fef3c7',color:'#92400e',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🏆 Prémio</span>}
 {e.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:700}}>🚩 Alerta</span>}
 {!e.settled&&e.tag!=='future'&&<span style={{background:'#fef3c7',color:'#d97706',borderRadius:4,padding:'0px 5px',fontSize:9,fontWeight:600}}>⏳</span>}
                           </div>
@@ -1111,7 +1112,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
                       </div>
                     </div>
                   ))}
-                  {filteredCf.length>20&&<div style={{padding:'8px 16px',background:'#f8fafc',textAlign:'center',fontSize:12,color:'#94a3b8'}}>A mostrar 20 de {filteredCf.length}</div>}
+                  {filteredCf.length>20&&<div onClick={()=>setCfExpanded(p=>!p)} style={{padding:'8px 16px',background:'#f8fafc',textAlign:'center',fontSize:12,color:'#16a34a',cursor:'pointer',fontWeight:600}}>{cfExpanded?'▲ Mostrar menos':`▼ Ver todas (${filteredCf.length})`}</div>}
                 </>
               )}
             </div>
@@ -1123,7 +1124,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
           <div style={{display:'flex',flexDirection:'column',gap:16}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
               <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                {[['all','Todas'],['paid','Recebidas'],['unpaid','Por receber'],['alert','🚩 Alerta']].map(([k,l])=><SBtn key={k} k={k} active={invFilter===k} onClick={()=>setInvFilter(k)}>{l}</SBtn>)}
+                {[['all','Todas'],['paid','Recebidas'],['unpaid','Por receber'],['premio','🏆 Prémios'],['alert','🚩 Alerta']].map(([k,l])=><SBtn key={k} k={k} active={invFilter===k} onClick={()=>setInvFilter(k)}>{l}</SBtn>)}
               </div>
               <div style={{display:'flex',gap:6,alignItems:'center'}}>
                 <DlBtn count={invAttachments.length} onClick={()=>dlAll(invAttachments)}/>
@@ -1145,7 +1146,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:2}}>
                             <span style={{fontSize:14,fontWeight:700}}>{inv.client}</span>
-                            <span style={{background:inv.status==='paid'?'#dcfce7':'#fff7ed',color:inv.status==='paid'?'#16a34a':'#d97706',padding:'2px 7px',borderRadius:99,fontSize:11,fontWeight:700}}>{inv.status==='paid'?'✓ Recebida':'⏳ Por receber'}</span>
+                            <span style={{background:inv.status==='paid'?'#dcfce7':'#fff7ed',color:inv.status==='paid'?'#16a34a':'#d97706',padding:'2px 7px',borderRadius:99,fontSize:11,fontWeight:700}}>{inv.status==='paid'?'✓ Recebida':'⏳ Por receber'}</span>{inv.type==='premio'&&<span style={{background:'#fef3c7',color:'#92400e',padding:'2px 7px',borderRadius:99,fontSize:11,fontWeight:700}}>🏆 Prémio</span>}
                             {ls.map((l,li)=><span key={li} style={{background:'#f3e8ff',color:'#7c3aed',borderRadius:5,padding:'1px 6px',fontSize:10,fontWeight:700}}>{l.rate}%</span>)}
 {inv.alertTag&&<span style={{background:'#fee2e2',color:'#dc2626',borderRadius:5,padding:'1px 6px',fontSize:10,fontWeight:700}}>🚩 Alerta</span>}
 </div>
@@ -1486,7 +1487,7 @@ return(
       </div>
 
       {invForm&&<InvoiceModal inv={invForm} onSave={saveInv} onClose={()=>setInvForm(null)}/>}
-      {expForm&&<ExpenseModal exp={expForm} onSave={saveExp} onClose={()=>setExpForm(null)}/>}
+      {expForm&&<ExpenseModal exp={expForm} onSave={saveExp} onClose={()=>setExpForm(null)} onConvert={convertExpToGrant}/>}
       {gexpForm&&<GrantExpModal exp={gexpForm} onSave={saveGexp} onClose={()=>setGexpForm(null)}/>}
       {futureForm&&<FutureExpModal fexp={futureForm} onSave={saveFutureExp} onClose={()=>setFutureForm(null)}/>}
       {payModal&&<PayFutureExpModal fexp={payModal} onPay={p=>payFutureExp(payModal,p)} onClose={()=>setPayModal(null)}/>}
