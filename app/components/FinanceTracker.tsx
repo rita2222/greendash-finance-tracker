@@ -366,54 +366,104 @@ function InvoiceModal({inv,onSave,onClose}){
     </div>
   )
 }
-function ExpenseModal({exp,onSave,onClose,onConvert}){
-  const initLines=()=>exp.ivaLines?.length?exp.ivaLines.map(l=>({base:String(l.base),rate:l.rate})):exp.amount?[{base:String(exp.amount),rate:exp.ivaRate??23}]:[{base:'',rate:23}]
-  const[f,setF]=useState({ivaDeductible:true,...exp,attachments:[...(exp.attachments||[])]})
-  const[lines,setLines]=useState(initLines)
-  const set=(k,v)=>setF(p=>({...p,[k]:v}))
-  const totalBase=lines.reduce((s,l)=>s+Number(l.base||0),0)
-  const valid=f.name&&totalBase>0
-  const expPrompt='Extract from this expense receipt/invoice. Respond ONLY with valid JSON (no markdown): {"name":"description","supplier":"vendor name","date":"YYYY-MM-DD","ivaLines":[{"base":0,"rate":23}]}.'
-  const onExtracted=p=>{
-    if(p.name||p.description)set('name',p.name||p.description)
-    if(p.supplier)set('cat',p.supplier)
-    if(p.date)set('date',p.date)
-    if(p.ivaLines?.length)setLines(p.ivaLines.map(l=>({base:String(l.base||0),rate:Number(l.rate||0)})))
-    else if(p.amount)setLines([{base:String(p.amount),rate:p.ivaRate??23}])
-  }
-  const handleSave=()=>{
-    if(!valid)return
-    const cleanLines=lines.filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}))
-    onSave({...f,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??0})
-  }
-  return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}}>
-      <div style={{background:'white',borderRadius:16,padding:24,width:'100%',maxWidth:420,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
-          <div style={{fontWeight:700,fontSize:16}}>💸 {exp.id?'Editar Despesa':'Nova Despesa'}</div>
-          <button onClick={onClose} style={{border:'none',background:'#f1f5f9',borderRadius:8,width:32,height:32,cursor:'pointer',fontSize:16}}>✕</button>
-        </div>
-        <div style={{display:'flex',flexDirection:'column',gap:13}}>
-          <AiDocStrip onExtracted={onExtracted} addAttachment={a=>set('attachments',[...f.attachments,a])} prompt={expPrompt}/>
-          <Field label="Nome" value={f.name} onChange={v=>set('name',v)} required/>
-          <Field label="Categoria / Fornecedor" value={f.cat} onChange={v=>set('cat',v)}/>
-          <Field label="Data" value={f.date} onChange={v=>set('date',v)} type="date"/>
-          <IvaLinesEditor lines={lines} setLines={setLines} ivaDeductible={f.ivaDeductible} setIvaDeductible={v=>set('ivaDeductible',v)} showDeductible={true}/>
-          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
-<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:`1px solid ${f.alertTag?'#fecaca':'#e2e8f0'}`}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
+function ExpenseModal({exp,onSave,onClose,onConvert,commonExps=[],onSaveCommon,onDelCommon}){
+const initLines=()=>exp.ivaLines?.length?exp.ivaLines.map(l=>({base:String(l.base),rate:l.rate})):exp.amount?[{base:String(exp.amount),rate:exp.ivaRate??23}]:[{base:'',rate:23}]
+const[f,setF]=useState({ivaDeductible:true,...exp,attachments:[...(exp.attachments||[])]})
+const[lines,setLines]=useState(initLines)
+const[view,setView]=useState('form')
+const[tName,setTName]=useState('')
+const[tCat,setTCat]=useState('')
+const[tLines,setTLines]=useState([{base:'',rate:23}])
+const[tIvaDed,setTIvaDed]=useState(true)
+const set=(k,v)=>setF(p=>({...p,[k]:v}))
+const totalBase=lines.reduce((s,l)=>s+Number(l.base||0),0)
+const valid=f.name&&totalBase>0
+const expPrompt='Extract from this expense receipt/invoice. Respond ONLY with valid JSON (no markdown): {"name":"description","supplier":"vendor name","date":"YYYY-MM-DD","ivaLines":[{"base":0,"rate":23}]}.'
+const onExtracted=p=>{
+if(p.name||p.description)set('name',p.name||p.description)
+if(p.supplier)set('cat',p.supplier)
+if(p.date)set('date',p.date)
+if(p.ivaLines?.length)setLines(p.ivaLines.map(l=>({base:String(l.base||0),rate:Number(l.rate||0)})))
+else if(p.amount)setLines([{base:String(p.amount),rate:p.ivaRate??23}])
+}
+const handleSave=()=>{
+if(!valid)return
+const cleanLines=lines.filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}))
+onSave({...f,amount:totalBase,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??0})
+}
+const applyCommon=t=>{
+set('name',t.name)
+set('cat',t.cat||'')
+set('ivaDeductible',t.ivaDeductible!==false)
+setLines(t.ivaLines?.length?t.ivaLines.map(l=>({base:String(l.base),rate:l.rate})):[{base:'',rate:23}])
+setView('form')
+}
+const saveNewCommon=()=>{
+const cleanTLines=tLines.filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}))
+if(!tName||!cleanTLines.length)return
+onSaveCommon({id:Date.now(),name:tName,cat:tCat,ivaLines:cleanTLines,ivaRate:cleanTLines[0]?.rate??0,ivaDeductible:tIvaDed})
+setTName('');setTCat('');setTLines([{base:'',rate:23}]);setTIvaDed(true)
+setView('list')
+}
+return(
+<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}}>
+<div style={{background:'white',borderRadius:16,padding:24,width:'100%',maxWidth:420,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+<div style={{fontWeight:700,fontSize:16}}>💸 {view==='list'?'Despesas Comuns':view==='new'?'Nova Despesa Comum':(exp.id?'Editar Despesa':'Nova Despesa')}</div>
+<button onClick={onClose} style={{border:'none',background:'#f1f5f9',borderRadius:8,width:32,height:32,cursor:'pointer',fontSize:16}}>✕</button>
+</div>
+{view==='form'&&(
+<div style={{display:'flex',flexDirection:'column',gap:13}}>
+<button onClick={()=>setView('list')} style={{border:'1px dashed #c4b5fd',background:'#f5f3ff',color:'#6d28d9',borderRadius:8,padding:'9px 10px',fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Despesas Comuns</button>
+<AiDocStrip onExtracted={onExtracted} addAttachment={a=>set('attachments',[...f.attachments,a])} prompt={expPrompt}/>
+<Field label="Nome" value={f.name} onChange={v=>set('name',v)} required/>
+<Field label="Categoria / Fornecedor" value={f.cat} onChange={v=>set('cat',v)}/>
+<Field label="Data" value={f.date} onChange={v=>set('date',v)} type="date"/>
+<IvaLinesEditor lines={lines} setLines={setLines} ivaDeductible={f.ivaDeductible} setIvaDeductible={v=>set('ivaDeductible',v)} showDeductible={true}/>
+<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
+<label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:f.alertTag?'1px solid #fecaca':'1px solid #e2e8f0'}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
 <Field label="Notas" value={f.notes||''} onChange={v=>set('notes',v)}/><button onClick={()=>onConvert(f,lines)} style={{border:'1px dashed #93c5fd',background:'#eff6ff',color:'#1d4ed8',borderRadius:8,padding:'9px 10px',fontSize:12,fontWeight:700,cursor:'pointer'}}>🏛️ Transformar em Despesa PRR</button>
-          <FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
-        </div>
-        <div style={{display:'flex',gap:8,marginTop:20}}>
-          <button onClick={onClose} style={{flex:1,padding:'10px',border:'1px solid #e2e8f0',borderRadius:8,background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#64748b'}}>Cancelar</button>
-          <button onClick={handleSave} style={{flex:2,padding:'10px',border:'none',borderRadius:8,background:valid?'#16a34a':'#94a3b8',color:'white',cursor:valid?'pointer':'not-allowed',fontSize:14,fontWeight:700}}>Guardar</button>
-        </div>
-      </div>
-    </div>
-  )
+<FileUploadZone attachments={f.attachments} onAdd={a=>set('attachments',[...f.attachments,a])} onRemove={i=>set('attachments',f.attachments.filter((_,j)=>j!==i))}/>
+</div>
+)}
+{view==='list'&&(
+<div style={{display:'flex',flexDirection:'column',gap:10}}>
+<button onClick={()=>setView('new')} style={{border:'none',background:'#16a34a',color:'white',borderRadius:8,padding:'10px',fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Nova despesa comum</button>
+{!commonExps.length&&<div style={{textAlign:'center',color:'#94a3b8',fontSize:13,padding:'14px 0'}}>Sem despesas comuns guardadas</div>}
+{commonExps.map(t=>(
+<div key={t.id} onClick={()=>applyCommon(t)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'#f8fafc',borderRadius:10,border:'1px solid #e2e8f0',cursor:'pointer'}}>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+<div style={{fontSize:11,color:'#94a3b8'}}>{t.cat}{linesBase(t.ivaLines)>0?(' · '+fmt(linesBase(t.ivaLines))+(linesIva(t.ivaLines)>0?(' + '+fmt(linesIva(t.ivaLines))+' IVA'):'')):''}</div>
+</div>
+<button onClick={e=>{e.stopPropagation();onDelCommon(t.id)}} style={{border:'none',background:'#fee2e2',color:'#dc2626',borderRadius:6,padding:'4px 8px',fontSize:11,cursor:'pointer'}}>✕</button>
+</div>
+))}
+<button onClick={()=>setView('form')} style={{border:'1px solid #e2e8f0',background:'white',color:'#64748b',borderRadius:8,padding:'9px',fontSize:13,fontWeight:600,cursor:'pointer'}}>← Voltar</button>
+</div>
+)}
+{view==='new'&&(
+<div style={{display:'flex',flexDirection:'column',gap:13}}>
+<Field label="Nome" value={tName} onChange={setTName} required/>
+<Field label="Categoria / Fornecedor" value={tCat} onChange={setTCat}/>
+<IvaLinesEditor lines={tLines} setLines={setTLines} ivaDeductible={tIvaDed} setIvaDeductible={setTIvaDed} showDeductible={true}/>
+<div style={{display:'flex',gap:8}}>
+<button onClick={()=>setView('list')} style={{flex:1,padding:'10px',border:'1px solid #e2e8f0',borderRadius:8,background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#64748b'}}>Cancelar</button>
+<button onClick={saveNewCommon} style={{flex:2,padding:'10px',border:'none',borderRadius:8,background:tName?'#16a34a':'#94a3b8',color:'white',cursor:tName?'pointer':'not-allowed',fontSize:14,fontWeight:700}}>Guardar</button>
+</div>
+</div>
+)}
+{view==='form'&&(
+<div style={{display:'flex',gap:8,marginTop:20}}>
+<button onClick={onClose} style={{flex:1,padding:'10px',border:'1px solid #e2e8f0',borderRadius:8,background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#64748b'}}>Cancelar</button>
+<button onClick={handleSave} style={{flex:2,padding:'10px',border:'none',borderRadius:8,background:valid?'#16a34a':'#94a3b8',color:'white',cursor:valid?'pointer':'not-allowed',fontSize:14,fontWeight:700}}>Guardar</button>
+</div>
+)}
+</div>
+</div>
+)
 }
 
-// ── Future Expense Modal ───────────────────────────────────────────────────
 function FutureExpModal({fexp,onSave,onClose}){
   const[f,setF]=useState({...fexp})
   const set=(k,v)=>setF(p=>({...p,[k]:v}))
