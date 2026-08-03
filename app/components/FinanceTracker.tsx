@@ -744,6 +744,7 @@ export default function App(){
   const[ivaYear,setIvaYear]=useState(today.getFullYear())
   const[ivaQ,setIvaQ]=useState(Math.floor(today.getMonth()/3)+1)
   const[ivaSubmitted,setIvaSubmitted]=useState({})
+  const[commonExps,setCommonExps]=useState([])
   const[invForm,setInvForm]=useState(null)
   const[expForm,setExpForm]=useState(null)
   const[gexpForm,setGexpForm]=useState(null)
@@ -769,6 +770,7 @@ const[gCatF,setGCatF]=useState('all')
         const g=await storageGet('ft_gexp');if(g)setGrantExps(JSON.parse(g.value))
         const fe=await storageGet('ft_future');if(fe)setFutureExpenses(JSON.parse(fe.value))
         const s=await storageGet('ft_ivasub');if(s)setIvaSubmitted(JSON.parse(s.value))
+        const c=await storageGet('ft_common');if(c)setCommonExps(JSON.parse(c.value))
       }catch(err){
         console.error('❌ Load error:', err)
       }finally{
@@ -781,6 +783,7 @@ const[gCatF,setGCatF]=useState('all')
   useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_gexp',JSON.stringify(grantExps));save()}},[grantExps,loaded])
   useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_future',JSON.stringify(futureExpenses));save()}},[futureExpenses,loaded])
   useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_ivasub',JSON.stringify(ivaSubmitted));save()}},[ivaSubmitted,loaded])
+  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_common',JSON.stringify(commonExps));save()}},[commonExps,loaded])
 
   const prevMo=()=>{if(mo===0){setMo(11);setYr(y=>y-1)}else setMo(m=>m-1)}
   const nextMo=()=>{if(mo===11){setMo(0);setYr(y=>y+1)}else setMo(m=>m+1)}
@@ -900,6 +903,8 @@ return cashflowEntries
   const toggleInvSt=id=>setInvoices(p=>p.map(i=>i.id===id?{...i,status:i.status==='paid'?'unpaid':'paid'}:i))
   const saveExp=exp=>{const n={...exp,id:exp.id||Date.now(),amount:Number(exp.amount)};setExpenses(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setExpForm(null)}
   const delExp=id=>setExpenses(p=>p.filter(e=>e.id!==id))
+  const saveCommonExp=t=>setCommonExps(p=>p.find(c=>c.id===t.id)?p.map(c=>c.id===t.id?t:c):[...p,t])
+  const delCommonExp=id=>setCommonExps(p=>p.filter(c=>c.id!==id))
   const toggleExpPaid=id=>setExpenses(p=>p.map(e=>e.id===id?{...e,paid:!e.paid}:e));const convertExpToGrant=(exp,lines)=>{const cleanLines=lines.filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}));const totalBase=cleanLines.reduce((s,l)=>s+Number(l.base||0),0);const totalWithIva=totalBase+linesIva(cleanLines);if(exp.id)setExpenses(p=>p.filter(e=>e.id!==exp.id));setExpForm(null);setGexpForm({id:0,grantId:'PRR',categoryId:'',name:exp.name||'',supplier:exp.cat||'',amount:totalWithIva,date:exp.date||todayStr,ivaRate:cleanLines[0]?.rate??Number(exp.ivaRate||23),invoiceFile:(exp.attachments&&exp.attachments[0])||null,submittedDate:'',expectedSubmission:'',reimbursementDate:'',reimbursementAmount:'',paid:!!exp.paid,alertTag:!!exp.alertTag,notes:exp.notes||'',createdAt:new Date().toISOString()})}
   const saveGexp=exp=>{const n={...exp,id:exp.id||Date.now(),amount:Number(exp.amount)};setGrantExps(p=>p.find(e=>e.id===n.id)?p.map(e=>e.id===n.id?n:e):[...p,n]);setGexpForm(null)}
   const delGexp=id=>setGrantExps(p=>p.filter(e=>e.id!==id))
@@ -1487,7 +1492,7 @@ return(
       </div>
 
       {invForm&&<InvoiceModal inv={invForm} onSave={saveInv} onClose={()=>setInvForm(null)}/>}
-      {expForm&&<ExpenseModal exp={expForm} onSave={saveExp} onClose={()=>setExpForm(null)} onConvert={convertExpToGrant}/>}
+      {expForm&&<ExpenseModal exp={expForm} onSave={saveExp} onClose={()=>setExpForm(null)} onConvert={convertExpToGrant} commonExps={commonExps} onSaveCommon={saveCommonExp} onDelCommon={delCommonExp}/>}
       {gexpForm&&<GrantExpModal exp={gexpForm} onSave={saveGexp} onClose={()=>setGexpForm(null)}/>}
       {futureForm&&<FutureExpModal fexp={futureForm} onSave={saveFutureExp} onClose={()=>setFutureForm(null)}/>}
       {payModal&&<PayFutureExpModal fexp={payModal} onPay={p=>payFutureExp(payModal,p)} onClose={()=>setPayModal(null)}/>}
