@@ -919,12 +919,12 @@ return cashflowEntries
     const ivaOutPending=qInv.filter(i=>i.status!=='paid').reduce((s,i)=>s+linesIva(getLines(i)),0)
     let ivaIn=0
     expenses.filter(e=>inQ(e.date)&&e.ivaDeductible!==false).forEach(e=>{getExpLines(e).filter(l=>l.rate>0).forEach(l=>{ivaIn+=Number(l.base)*l.rate/100})})
-    grantExps.filter(ge=>inQ(ge.date)&&ge.ivaRate>0).forEach(ge=>{ivaIn+=ivaAmt(ge.amount,ge.ivaRate)})
+    grantExps.filter(ge=>inQ(ge.date)&&ge.ivaRate>0).forEach(ge=>{ivaIn+=ivaAmt(grantBase(ge),ge.ivaRate)})
     const deadline=qDeadline(ivaQ,ivaYear);const daysLeft=Math.ceil((deadline-today)/(1000*60*60*24))
     const invLines=qInv.flatMap(i=>{const ls=getLines(i).filter(l=>l.rate>0);return ls.map(l=>({label:i.client+(i.desc?` — ${i.desc}`:'')+( ls.length>1?` (${l.rate}%)`:''),date:i.issued,base:Number(l.base),rate:l.rate,iva:Number(l.base)*l.rate/100,settled:i.status==='paid'}))})
     const expLines=[]
     expenses.filter(e=>inQ(e.date)&&e.ivaDeductible!==false).forEach(e=>{const ls=getExpLines(e).filter(l=>l.rate>0);ls.forEach(l=>expLines.push({label:e.name+(ls.length>1?` (${l.rate}%)`:''),date:e.date,base:Number(l.base),rate:l.rate,iva:Number(l.base)*l.rate/100}))})
-    grantExps.filter(ge=>inQ(ge.date)&&ge.ivaRate>0).forEach(ge=>expLines.push({label:ge.name,date:ge.date,base:Number(ge.amount),rate:Number(ge.ivaRate||0),iva:ivaAmt(ge.amount,ge.ivaRate)}))
+    grantExps.filter(ge=>inQ(ge.date)&&ge.ivaRate>0).forEach(ge=>expLines.push({label:ge.name,date:ge.date,base:grantBase(ge),rate:Number(ge.ivaRate||0),iva:ivaAmt(grantBase(ge),ge.ivaRate)}))
     return{ivaOut,ivaOutPending,ivaIn,ivaNet:ivaOut-ivaIn,deadline,daysLeft,invLines,expLines}
   },[invoices,expenses,grantExps,ivaYear,ivaQ])
 
