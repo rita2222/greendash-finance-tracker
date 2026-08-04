@@ -583,12 +583,20 @@ function PayFutureExpModal({fexp,onPay,onClose}){
 }
 
 function GrantExpModal({exp,onSave,onClose}){
-  const[f,setF]=useState({ivaRate:23,...exp});const set=(k,v)=>setF(p=>({...p,[k]:v}))
-  const ref=useRef();const valid=f.categoryId&&f.name&&f.amount&&f.date
+  const initLines=()=>exp.ivaLines?.length?exp.ivaLines.map(l=>({base:String(l.base),rate:l.rate})):exp.amount?[{base:String(grantBase(exp)),rate:exp.ivaRate??23}]:[{base:'',rate:23}]
+const[f,setF]=useState({ivaRate:23,...exp});const set=(k,v)=>setF(p=>({...p,[k]:v}))
+  const[lines,setLines]=useState(initLines)
+const ref=useRef();const totalBase=lines.reduce((s,l)=>s+Number(l.base||0),0);const totalIva=linesIva(lines)
+const valid=f.categoryId&&f.name&&totalBase>0&&f.date
   const cat=PRR_CATS.find(c=>c.id===f.categoryId)
   const readInv=file=>new Promise((res,rej)=>{if(file.size>5242880){alert('Max 5MB');return rej()}const r=new FileReader();r.onload=e=>res({name:file.name,type:file.type,size:file.size,data:e.target.result.split(',')[1],mime:file.type});r.onerror=rej;r.readAsDataURL(file)})
   const onPick=async e=>{const file=e.target.files[0];if(!file)return;try{set('invoiceFile',await readInv(file))}catch{}}
   const dlInv=()=>{if(!f.invoiceFile)return;dlAll([f.invoiceFile])}
+const handleSave=()=>{
+if(!valid)return
+const cleanLines=lines.filter(l=>Number(l.base||0)>0).map(l=>({base:Number(l.base),rate:Number(l.rate||0)}))
+onSave({...f,amount:totalBase+totalIva,ivaLines:cleanLines,ivaRate:cleanLines[0]?.rate??0})
+}
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}}>
       <div style={{background:'white',borderRadius:16,padding:24,width:'100%',maxWidth:520,maxHeight:'94vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
@@ -610,18 +618,9 @@ function GrantExpModal({exp,onSave,onClose}){
           </div>
           <Field label="Descrição" value={f.name} onChange={v=>set('name',v)} required/>
           <Field label="Fornecedor" value={f.supplier} onChange={v=>set('supplier',v)}/>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <Field label="Valor total (€ c/ IVA)" value={f.amount} onChange={v=>set('amount',v)} type="number" required/>
-            <Field label="Data" value={f.date} onChange={v=>set('date',v)} type="date" required/>
-          </div>
-          <div>
-            <label style={{fontSize:12,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>Taxa IVA</label>
-            <select value={f.ivaRate} onChange={e=>set('ivaRate',Number(e.target.value))} style={{width:'100%',padding:'8px 12px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,fontFamily:'inherit',background:'white'}}>
-              {IVA_RATES.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
-            </select>
-          </div>
-          {f.amount&&Number(f.ivaRate)>0&&<div style={{fontSize:11,color:'#64748b'}}>Base s/ IVA: <strong>{fmt(Number(f.amount)/(1+Number(f.ivaRate)/100))}</strong></div>}
-          {f.amount&&<div style={{fontSize:11,color:'#16a34a'}}>💡 Reembolso esperado (75% da base): <strong>{fmt(Number(f.amount)/(1+(Number(f.ivaRate)||0)/100)*0.75)}</strong></div>}
+          <Field label="Data" value={f.date} onChange={v=>set('date',v)} type="date" required/>
+<IvaLinesEditor lines={lines} setLines={setLines} showDeductible={false}/>
+{totalBase>0&&<div style={{fontSize:11,color:'#16a34a'}}>💡 Reembolso esperado (75% da base): <strong>{fmt(totalBase*0.75)}</strong></div>}
 <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}><input type="checkbox" checked={!!f.paid} onChange={e=>set('paid',e.target.checked)} style={{width:15,height:15}}/>Já pago</label>
 <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,background:f.alertTag?'#fef2f2':'#f8fafc',padding:'8px 10px',borderRadius:8,border:`1px solid ${f.alertTag?'#fecaca':'#e2e8f0'}`}}><input type="checkbox" checked={!!f.alertTag} onChange={e=>set('alertTag',e.target.checked)} style={{width:15,height:15}}/>🚩 Marcar com tag de alerta</label>
 <div style={{background:f.invoiceFile?'#f0fdf4':'#fff5f5',border:`2px solid ${f.invoiceFile?'#bbf7d0':'#fecaca'}`,borderRadius:10,padding:12}}>
@@ -656,7 +655,7 @@ function GrantExpModal({exp,onSave,onClose}){
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
           <button onClick={onClose} style={{flex:1,padding:'10px',border:'1px solid #e2e8f0',borderRadius:8,background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#64748b'}}>Cancelar</button>
-          <button onClick={()=>valid&&onSave(f)} style={{flex:2,padding:'10px',border:'none',borderRadius:8,background:valid?'#1d4ed8':'#94a3b8',color:'white',cursor:valid?'pointer':'not-allowed',fontSize:14,fontWeight:700}}>Guardar</button>
+          <button onClick={handleSave} style={{flex:2,padding:'10px',border:'none',borderRadius:8,background:valid?'#1d4ed8':'#94a3b8',color:'white',cursor:valid?'pointer':'not-allowed',fontSize:14,fontWeight:700}}>Guardar</button>
         </div>
       </div>
     </div>
