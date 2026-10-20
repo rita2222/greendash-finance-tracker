@@ -6,39 +6,24 @@ import { createClient } from '@supabase/supabase-js'
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
 
 async function storageGet(key) {
-  try {
-    const { data, error } = await supabase.from('finance_data').select('value').eq('key', key).single()
-    if (error && error.code !== 'PGRST116') {
-      console.warn('⚠️ Supabase GET error:', error)
-      const local = localStorage.getItem(key)
-      return local ? { key, value: local } : null
-    }
-    return error ? null : { key, value: data?.value }
-  } catch (e) { 
-    console.error('❌ Supabase GET exception:', e)
-    const local = localStorage.getItem(key)
-    return local ? { key, value: local } : null
-  }
+  const { data, error } = await supabase.from('finance_data').select('value').eq('key', key).maybeSingle()
+  if (error) throw error
+  return data ? { key, value: data.value } : null
 }
 
 async function storageSet(key, value) {
-  try {
-    await supabase.from('finance_data').delete().eq('key', key)
-    const { error } = await supabase.from('finance_data').insert([{ key, value }])
-    if (error) {
-      console.warn('⚠️ Supabase SET error:', error)
-      localStorage.setItem(key, value)
-      return true
-    }
-    localStorage.setItem(key, value)
-    return true
-  } catch (e) { 
-    console.error('❌ Supabase SET exception:', e)
-    localStorage.setItem(key, value)
-    return true
+  let { error } = await supabase.from('finance_data').upsert({ key, value }, { onConflict: 'key' })
+  if (error && error.code === '42P10') {
+    // a coluna key não tem UNIQUE: alternativa (update, e insert só se a linha não existir)
+    const upd = await supabase.from('finance_data').update({ value }).eq('key', key).select('key')
+    if (upd.error) error = upd.error
+    else if (upd.data && upd.data.length > 0) error = null
+    else error = (await supabase.from('finance_data').insert([{ key, value }])).error
   }
+  if (error) { console.error('Supabase SET error:', error); return false }
+  localStorage.setItem(key, value)
+  return true
 }
-
 
 const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
 const today=new Date()
@@ -809,30 +794,48 @@ const[gCatF,setGCatF]=useState('all')
   const[allTime,setAllTime]=useState(false)
   const[loaded,setLoaded]=useState(false)
 
+  const lastSaved=useRef({})
   const selYM=`${yr}-${String(mo+1).padStart(2,'0')}`
 
   useEffect(()=>{
     (async()=>{
       try{
-        const i=await storageGet('ft_inv');if(i)setInvoices(JSON.parse(i.value))
-        const e=await storageGet('ft_exp');if(e)setExpenses(JSON.parse(e.value))
-        const g=await storageGet('ft_gexp');if(g)setGrantExps(JSON.parse(g.value))
-        const fe=await storageGet('ft_future');if(fe)setFutureExpenses(JSON.parse(fe.value))
-        const s=await storageGet('ft_ivasub');if(s)setIvaSubmitted(JSON.parse(s.value))
-        const c=await storageGet('ft_common');if(c)setCommonExps(JSON.parse(c.value))
-      }catch(err){
-        console.error('❌ Load error:', err)
-      }finally{
+        const load=async(key,setter)=>{
+          const r=await storageGet(key)
+          if(r){setter(JSON.parse(r.value));lastSaved.current[key]=r.value}
+          else{lastSaved.current[key]=null}
+        }
+        await load('ft_inv',setInvoices)
+        await load('ft_exp',setExpenses)
+        await load('ft_gexp',setGrantExps)
+        await load('ft_future',setFutureExpenses)
+        await load('ft_ivasub',setIvaSubmitted)
+        await load('ft_common',setCommonExps)
         setLoaded(true)
+      }catch(err){
+        console.error('❌ Load error — gravação desativada para não apagar dados:', err)
+        alert('Não foi possível carregar os dados. A gravação está desativada para proteger os dados. Recarrega a página.')
       }
     })()
   },[])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_inv',JSON.stringify(invoices));save()}},[invoices,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_exp',JSON.stringify(expenses));save()}},[expenses,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_gexp',JSON.stringify(grantExps));save()}},[grantExps,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_future',JSON.stringify(futureExpenses));save()}},[futureExpenses,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_ivasub',JSON.stringify(ivaSubmitted));save()}},[ivaSubmitted,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_common',JSON.stringify(commonExps));save()}},[commonExps,loaded])
+  const saveIfChanged=async(key,data)=>{
+    const json=JSON.stringify(data)
+    if(lastSaved.current[key]===json)return
+    if(await storageSet(key,json))lastSaved.current[key]=json
+  }
+  useEffect(()=>{if(loaded)saveIfChanged('ft_inv',invoices)},[invoices,loaded])
+  useEffect(()=>{if(loaded)saveIfChanged('ft_exp',expenses)},[expenses,loaded])
+  useEffect(()=>{if(loaded)saveIfChanged('ft_gexp',grantExps)},[grantExps,loaded])
+  useEffect(()=>{if(loaded)saveIfChanged('ft_future',futureExpenses)},[futureExpenses,loaded])
+  useEffect(()=>{if(loaded)saveIfChanged('ft_ivasub',ivaSubmitted)},[ivaSubmitted,loaded])
+  useEffect(()=>{if(loaded)saveIfChanged('ft_common',commonExps)},[commonExps,loaded])
+  const downloadBackup=()=>{
+    const data={exportedAt:new Date().toISOString(),ft_inv:invoices,ft_exp:expenses,ft_gexp:grantExps,ft_future:futureExpenses,ft_ivasub:ivaSubmitted,ft_common:commonExps}
+    const a=document.createElement('a')
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}))
+    a.download='finance-tracker-backup-'+new Date().toISOString().slice(0,10)+'.json'
+    a.click()
+  }
 
   const prevMo=()=>{if(mo===0){setMo(11);setYr(y=>y-1)}else setMo(m=>m-1)}
   const nextMo=()=>{if(mo===11){setMo(0);setYr(y=>y+1)}else setMo(m=>m+1)}
@@ -1029,6 +1032,7 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
           <button onClick={()=>setBatchModal(true)} style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>🤖 AI Import</button>
           <div style={{position:'relative'}}>
+            <button onClick={downloadBackup} style={{background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>💾 Backup</button>
             <button onClick={()=>setShowExportMenu(p=>!p)} style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>📥 Excel</button>
             {showExportMenu&&(
               <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,background:'white',borderRadius:10,boxShadow:'0 4px 20px rgba(0,0,0,0.15)',border:'1px solid #e2e8f0',zIndex:100,minWidth:180,overflow:'hidden'}}>
