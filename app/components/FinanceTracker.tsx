@@ -1,43 +1,22 @@
 //@ts-nocheck
 import { useState, useEffect, useMemo, useRef } from "react"
 import * as XLSX from 'xlsx'
-import { createClient } from '@supabase/supabase-js'
+import { financeStore as store } from '../../lib/supabase'
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
-
-async function storageGet(key) {
-  try {
-    const { data, error } = await supabase.from('finance_data').select('value').eq('key', key).single()
-    if (error && error.code !== 'PGRST116') {
-      console.warn('⚠️ Supabase GET error:', error)
-      const local = localStorage.getItem(key)
-      return local ? { key, value: local } : null
-    }
-    return error ? null : { key, value: data?.value }
-  } catch (e) { 
-    console.error('❌ Supabase GET exception:', e)
-    const local = localStorage.getItem(key)
-    return local ? { key, value: local } : null
-  }
-}
-
-async function storageSet(key, value) {
-  try {
-    await supabase.from('finance_data').delete().eq('key', key)
-    const { error } = await supabase.from('finance_data').insert([{ key, value }])
-    if (error) {
-      console.warn('⚠️ Supabase SET error:', error)
-      localStorage.setItem(key, value)
-      return true
-    }
-    localStorage.setItem(key, value)
-    return true
-  } catch (e) { 
-    console.error('❌ Supabase SET exception:', e)
-    localStorage.setItem(key, value)
-    return true
-  }
-}
+// ── Persistência segura ────────────────────────────────────────────────────
+// Toda a leitura/gravação passa por lib/financeStore.ts. Regras desta app:
+//  • nunca se grava ao abrir a página (só quando o utilizador altera dados);
+//  • se a leitura falhar, a gravação fica desativada (nunca se grava "vazio" por engano);
+//  • gravações são atómicas e detetam alterações feitas noutro separador/dispositivo;
+//  • gravar uma lista vazia por cima de dados pede confirmação.
+const DATA_KEYS=['ft_inv','ft_exp','ft_gexp','ft_future','ft_ivasub','ft_common']
+const EMPTY_JSON={ft_inv:'[]',ft_exp:'[]',ft_gexp:'[]',ft_future:'[]',ft_ivasub:'{}',ft_common:'[]'}
+const KEY_LABEL={ft_inv:'Vendas',ft_exp:'Despesas',ft_gexp:'Despesas PRR',ft_future:'Despesas futuras',ft_ivasub:'IVA submetido',ft_common:'Despesas comuns'}
+const isEmptyJson=s=>s==null||s==='[]'||s==='{}'
+const countJson=s=>{try{const v=JSON.parse(s);return Array.isArray(v)?v.length:Object.keys(v||{}).length}catch{return 0}}
+// Cópia local (só leitura/recuperação). Só é atualizada com dados que o servidor confirmou.
+const mirrorGet=k=>{try{return localStorage.getItem('ft_mirror_'+k)}catch{return null}}
+const mirrorSet=(k,v)=>{try{localStorage.setItem('ft_mirror_'+k,v)}catch{try{localStorage.removeItem('ft_mirror_'+k)}catch{}}}
 
 
 const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
@@ -782,6 +761,9 @@ const DlBtn=({count,onClick})=>count>0?(
   </button>
 ):null
 
+const Banner=({tone='red',children})=>{const c={red:['#fef2f2','#fecaca','#991b1b'],amber:['#fffbeb','#fde68a','#92400e'],blue:['#eff6ff','#bfdbfe','#1e40af']}[tone];return(<div style={{background:c[0],border:`1px solid ${c[1]}`,color:c[2],borderRadius:10,padding:'10px 14px',fontSize:13,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>{children}</div>)}
+const BannerBtn=({onClick,children})=>(<button onClick={onClick} style={{border:'1px solid currentColor',background:'white',color:'inherit',borderRadius:8,padding:'5px 10px',fontSize:12,fontWeight:700,cursor:'pointer'}}>{children}</button>)
+
 export default function App(){
   const[tab,setTab]=useState('dashboard')
   const[invoices,setInvoices]=useState([])
@@ -807,32 +789,124 @@ const[gCatF,setGCatF]=useState('all')
   const[cfFilter,setCfFilter]=useState('all')
     const[cfExpanded,setCfExpanded]=useState(false)
   const[allTime,setAllTime]=useState(false)
-  const[loaded,setLoaded]=useState(false)
-
   const selYM=`${yr}-${String(mo+1).padStart(2,'0')}`
 
-  useEffect(()=>{
-    (async()=>{
+  // ── Persistência segura (ver comentário no topo do ficheiro e lib/financeStore.ts) ──
+  const[loadState,setLoadState]=useState('loading') // loading | ready | error
+  const[loadMsg,setLoadMsg]=useState('')
+  const[saveInfo,setSaveInfo]=useState({status:'idle',msg:''}) // idle | saving | saved | error | conflict
+  const[localRestore,setLocalRestore]=useState(null) // {chave: nº de registos} quando o servidor está vazio mas há cópia local
+  const baseline=useRef({})        // chave -> JSON da última versão que o servidor confirmou
+  const writeQ=useRef({})          // chave -> {running,latest} (uma gravação de cada vez por chave)
+  const savesBlocked=useRef(true)  // true enquanto não houver leitura bem-sucedida, ou após conflito
+  const inflight=useRef(0)
+  const failedKeys=useRef(new Set())
+  const setters={ft_inv:setInvoices,ft_exp:setExpenses,ft_gexp:setGrantExps,ft_future:setFutureExpenses,ft_ivasub:setIvaSubmitted,ft_common:setCommonExps}
+  const values={ft_inv:invoices,ft_exp:expenses,ft_gexp:grantExps,ft_future:futureExpenses,ft_ivasub:ivaSubmitted,ft_common:commonExps}
+
+  const loadAll=async()=>{
+    savesBlocked.current=true
+    setLoadState('loading');setLoadMsg('');setLocalRestore(null)
+    const res=await Promise.all(DATA_KEYS.map(k=>store.load(k)))
+    const failed=res.find(r=>r.status==='error')
+    if(failed){
+      // Leitura falhou: mostra a cópia local (se existir) em modo só de leitura. NADA é gravado.
+      DATA_KEYS.forEach(k=>{const m=mirrorGet(k);if(m){try{setters[k](JSON.parse(m))}catch{}}})
+      setLoadMsg(failed.message||'erro desconhecido');setLoadState('error');return
+    }
+    const parsed={}
+    try{
+      DATA_KEYS.forEach((k,i)=>{parsed[k]=JSON.parse(res[i].status==='ok'?res[i].value:EMPTY_JSON[k])})
+    }catch{
+      setLoadMsg('Os dados guardados no servidor estão ilegíveis (JSON inválido).');setLoadState('error');return
+    }
+    let restore=null
+    DATA_KEYS.forEach(k=>{
+      const norm=JSON.stringify(parsed[k])
+      baseline.current[k]=norm
+      setters[k](parsed[k])
+      const m=mirrorGet(k)
+      if(isEmptyJson(norm)&&m&&!isEmptyJson(m)){restore={...(restore||{}),[k]:countJson(m)}} // não apagar a cópia local
+      else mirrorSet(k,norm)
+    })
+    failedKeys.current=new Set()
+    setSaveInfo({status:'idle',msg:''})
+    setLocalRestore(restore)
+    savesBlocked.current=false
+    setLoadState('ready')
+  }
+  useEffect(()=>{loadAll()},[])
+
+  const refreshSaveInfo=()=>{
+    if(failedKeys.current.size>0)return
+    setSaveInfo(inflight.current>0?{status:'saving',msg:''}:{status:'saved',msg:''})
+  }
+  const requestSave=(k,s)=>{
+    if(savesBlocked.current)return
+    const q=writeQ.current[k]||(writeQ.current[k]={running:false,latest:null})
+    q.latest=s
+    if(q.running)return
+    q.running=true
+    ;(async()=>{
       try{
-        const i=await storageGet('ft_inv');if(i)setInvoices(JSON.parse(i.value))
-        const e=await storageGet('ft_exp');if(e)setExpenses(JSON.parse(e.value))
-        const g=await storageGet('ft_gexp');if(g)setGrantExps(JSON.parse(g.value))
-        const fe=await storageGet('ft_future');if(fe)setFutureExpenses(JSON.parse(fe.value))
-        const s=await storageGet('ft_ivasub');if(s)setIvaSubmitted(JSON.parse(s.value))
-        const c=await storageGet('ft_common');if(c)setCommonExps(JSON.parse(c.value))
-      }catch(err){
-        console.error('❌ Load error:', err)
-      }finally{
-        setLoaded(true)
-      }
+        while(q.latest!==null&&!savesBlocked.current){
+          const next=q.latest;q.latest=null
+          if(next===baseline.current[k]){failedKeys.current.delete(k);continue}
+          if(isEmptyJson(next)&&!isEmptyJson(baseline.current[k])){
+            const n=countJson(baseline.current[k])
+            if(!window.confirm(`Vais gravar uma lista VAZIA em "${KEY_LABEL[k]}", por cima de ${n} registo(s) que existem no servidor.\n\nConfirmas que queres apagar tudo?`)){
+              setters[k](JSON.parse(baseline.current[k]));continue // cancela: repõe o que está no servidor
+            }
+          }
+          inflight.current++;setSaveInfo({status:'saving',msg:''})
+          const r=await store.save(k,next)
+          inflight.current--
+          if(r.status==='ok'){
+            baseline.current[k]=next;mirrorSet(k,next);failedKeys.current.delete(k);refreshSaveInfo()
+          }else if(r.status==='conflict'){
+            savesBlocked.current=true;q.latest=null
+            setSaveInfo({status:'conflict',msg:''})
+          }else{
+            failedKeys.current.add(k);q.latest=null
+            setSaveInfo({status:'error',msg:r.message||''})
+          }
+        }
+      }finally{q.running=false}
     })()
-  },[])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_inv',JSON.stringify(invoices));save()}},[invoices,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_exp',JSON.stringify(expenses));save()}},[expenses,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_gexp',JSON.stringify(grantExps));save()}},[grantExps,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_future',JSON.stringify(futureExpenses));save()}},[futureExpenses,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_ivasub',JSON.stringify(ivaSubmitted));save()}},[ivaSubmitted,loaded])
-  useEffect(()=>{if(loaded){const save=async()=>await storageSet('ft_common',JSON.stringify(commonExps));save()}},[commonExps,loaded])
+  }
+  const flushAll=()=>{DATA_KEYS.forEach(k=>{const s=JSON.stringify(values[k]);if(s!==baseline.current[k])requestSave(k,s)})}
+  // Grava só o que mudou em relação ao servidor. Ao abrir a página nada mudou, logo nada é gravado.
+  useEffect(()=>{if(loadState==='ready'&&!savesBlocked.current)flushAll()},[invoices,expenses,grantExps,futureExpenses,ivaSubmitted,commonExps,loadState])
+  useEffect(()=>{
+    const h=e=>{if(saveInfo.status==='saving'||saveInfo.status==='error'||saveInfo.status==='conflict'){e.preventDefault();e.returnValue=''}}
+    window.addEventListener('beforeunload',h);return()=>window.removeEventListener('beforeunload',h)
+  },[saveInfo.status])
+
+  const retrySave=()=>{setSaveInfo({status:'idle',msg:''});flushAll()}
+  const restoreLocal=()=>{DATA_KEYS.forEach(k=>{if(localRestore&&localRestore[k]){const m=mirrorGet(k);try{setters[k](JSON.parse(m))}catch{}}});setLocalRestore(null)}
+  const exportBackup=()=>{
+    const data={};DATA_KEYS.forEach(k=>{data[k]=values[k]})
+    const payload={app:'greendash-finance-tracker',formatVersion:1,exportedAt:new Date().toISOString(),data}
+    const url=URL.createObjectURL(new Blob([JSON.stringify(payload)],{type:'application/json'}))
+    const a=document.createElement('a');a.href=url;a.download=`GreenDash_backup_${new Date().toISOString().slice(0,10)}.json`
+    document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000)
+  }
+  const importBackup=async file=>{
+    if(loadState!=='ready'||savesBlocked.current){alert('A app não consegue gravar neste momento (ver aviso no topo). Resolve isso antes de restaurar um backup.');return}
+    try{
+      const j=JSON.parse(await file.text());const d=j&&j.data
+      if(!d||typeof d!=='object')throw new Error('formato')
+      const found=DATA_KEYS.filter(k=>d[k]!==undefined)
+      if(!found.length)throw new Error('vazio')
+      found.forEach(k=>{const isObj=k==='ft_ivasub';const v=d[k];if(isObj?(typeof v!=='object'||Array.isArray(v)||v===null):!Array.isArray(v))throw new Error('tipo '+k)})
+      const resumo=found.map(k=>`${KEY_LABEL[k]}: ${countJson(JSON.stringify(d[k]))}`).join('\n')
+      const quando=j.exportedAt?new Date(j.exportedAt).toLocaleString('pt-PT'):'data desconhecida'
+      if(!window.confirm(`Restaurar backup de ${quando}?\n\n${resumo}\n\nOs dados atuais destas secções serão SUBSTITUÍDOS pelos do backup. (Dica: descarrega primeiro um backup dos dados atuais.)`))return
+      found.forEach(k=>setters[k](d[k]))
+    }catch(err){
+      alert('Ficheiro de backup inválido — nada foi alterado.')
+    }
+  }
 
   const prevMo=()=>{if(mo===0){setMo(11);setYr(y=>y-1)}else setMo(m=>m-1)}
   const nextMo=()=>{if(mo===11){setMo(0);setYr(y=>y+1)}else setMo(m=>m+1)}
@@ -1019,6 +1093,8 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
   const expAttachments=expenses.flatMap(e=>e.attachments||[])
   const gexpInvoices=filteredGexp.map(ge=>ge.invoiceFile).filter(Boolean)
 
+  if(loadState==='loading')return(<div style={{fontFamily:'Inter,system-ui,sans-serif',background:'#f8fafc',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',color:'#64748b',fontSize:14}}>A carregar os teus dados…</div>)
+
   return(
     <div style={{fontFamily:'Inter,system-ui,sans-serif',background:'#f8fafc',minHeight:'100vh',color:'#1e293b'}}>
       <div style={{background:'white',borderBottom:'1px solid #e2e8f0',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
@@ -1027,6 +1103,9 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
           <span style={{fontWeight:800,fontSize:17}}>Finance Tracker</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          {saveInfo.status!=='idle'&&(<span title={saveInfo.msg||''} style={{fontSize:11,fontWeight:700,padding:'5px 10px',borderRadius:20,background:saveInfo.status==='saved'?'#dcfce7':saveInfo.status==='saving'?'#fef3c7':'#fee2e2',color:saveInfo.status==='saved'?'#16a34a':saveInfo.status==='saving'?'#92400e':'#dc2626'}}>{saveInfo.status==='saved'?'✓ Guardado':saveInfo.status==='saving'?'A guardar…':'⚠️ Não guardado'}</span>)}
+          <button onClick={exportBackup} title="Descarregar uma cópia de todos os dados (ficheiro JSON)" style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>💾 Backup</button>
+          <label title="Restaurar os dados a partir de um backup (ficheiro JSON)" style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer',display:'inline-block'}}>♻️ Restaurar<input type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)importBackup(f)}}/></label>
           <button onClick={()=>setBatchModal(true)} style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>🤖 AI Import</button>
           <div style={{position:'relative'}}>
             <button onClick={()=>setShowExportMenu(p=>!p)} style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:8,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>📥 Excel</button>
@@ -1056,6 +1135,15 @@ return l.sort((a,b)=>b.issued.localeCompare(a.issued))
           </div>
         </div>
       </div>
+
+      {(loadState==='error'||saveInfo.status==='conflict'||saveInfo.status==='error'||localRestore)&&(
+        <div style={{padding:'10px 16px 0',display:'flex',flexDirection:'column',gap:8}}>
+          {loadState==='error'&&(<Banner tone="red"><span style={{flex:1,minWidth:240}}>⚠️ <strong>Não foi possível ler os dados do servidor</strong> ({loadMsg}). Para proteger os teus dados, a gravação está <strong>desativada</strong>: o que vês pode estar incompleto e as alterações NÃO serão guardadas.</span><BannerBtn onClick={loadAll}>Tentar novamente</BannerBtn><BannerBtn onClick={exportBackup}>💾 Descarregar o que está no ecrã</BannerBtn></Banner>)}
+          {saveInfo.status==='conflict'&&(<Banner tone="red"><span style={{flex:1,minWidth:240}}>⚠️ <strong>Estes dados foram alterados noutro separador ou dispositivo</strong> depois de abrires esta página. Para não apagar essas alterações, a gravação foi pausada e as tuas últimas alterações aqui <strong>ainda não foram guardadas</strong>.</span><BannerBtn onClick={exportBackup}>💾 Descarregar cópia desta sessão</BannerBtn><BannerBtn onClick={loadAll}>Recarregar dados do servidor</BannerBtn></Banner>)}
+          {saveInfo.status==='error'&&loadState!=='error'&&(<Banner tone="amber"><span style={{flex:1,minWidth:240}}>⚠️ <strong>Falha ao guardar</strong>{saveInfo.msg?` (${saveInfo.msg})`:''}. As alterações ainda não estão no servidor — não feches esta página.</span><BannerBtn onClick={retrySave}>Tentar novamente</BannerBtn><BannerBtn onClick={exportBackup}>💾 Descarregar cópia</BannerBtn></Banner>)}
+          {localRestore&&(<Banner tone="blue"><span style={{flex:1,minWidth:240}}>ℹ️ O servidor está <strong>sem dados</strong>, mas este browser tem uma cópia local ({Object.entries(localRestore).map(([k,n])=>`${KEY_LABEL[k]}: ${n}`).join(' · ')}).</span><BannerBtn onClick={restoreLocal}>Restaurar cópia local</BannerBtn><BannerBtn onClick={()=>setLocalRestore(null)}>Ignorar</BannerBtn></Banner>)}
+        </div>
+      )}
 
       <div style={{background:'white',borderBottom:'1px solid #e2e8f0',padding:'0 16px',display:'flex',overflowX:'auto'}}>
         <button style={tabSt('dashboard')} onClick={()=>setTab('dashboard')}>📊 Dashboard</button>
